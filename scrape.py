@@ -14,7 +14,7 @@ import random
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Iterable
@@ -27,6 +27,7 @@ from playwright.async_api import Browser, Error as PlaywrightError, TimeoutError
 WWE_SUPERSTARS_URL = "https://www.wwe.com/superstars"
 CAGEMATCH_TITLES_URL = "https://www.cagematch.net/?id=8&nr=1&page=9"
 OUTPUT_PATH = Path("public/champions.json")
+METADATA_PATH = Path("public/metadata.json")
 INDEX_PATH = Path("index.html")
 NO_DEFENSE = "No Title Defenses Yet"
 
@@ -583,6 +584,13 @@ async def main() -> None:
 
     if records and records[0].get("imageUrl"):
         update_og_image(records[0]["imageUrl"])
+
+    generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    METADATA_PATH.write_text(
+        json.dumps({"generatedAt": generated_at}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Wrote refresh metadata to {METADATA_PATH}")
 
 
 def update_og_image(image_url: str) -> None:
