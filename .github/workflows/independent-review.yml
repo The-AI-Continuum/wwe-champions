@@ -1,55 +1,343 @@
 name: Independent Review
 
-# The reviewer that did NOT write the code. Changes here are authored by the SDLC
-# pipeline agent, and a model reviewing its own output shares the authoring
-# session's blind spots — so this gate runs PR-Agent on independent models,
-# unconditionally on every PR rather than on request. Required by Stage 10 of
-# the SDLC pipeline (two reviewers of different lineage).
+# External PR review waits for successful required checks on the current PR revision.
+# It publishes immutable review evidence; the separate binding-approval workflow
+# validates that evidence and submits the independent GitHub APPROVE review.
+# Legacy phase identifiers are retained solely for evidence-contract compatibility.
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review, reopened]
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_url:
+        description: Pull request URL to review (dispatch with the PR's branch as ref, or the verdict cannot find the PR)
+        required: true
+        type: string
 
 permissions:
+  actions: read
+  checks: read
   contents: read
+  issues: read
   pull-requests: write
+
+# A new push makes the running review stale; cancel it to free the runner.
+concurrency:
+  group: independent-review-${{ github.event.pull_request.html_url || inputs.pr_url }}
+  cancel-in-progress: true
 
 jobs:
   pr-agent:
-    name: PR-Agent (independent)
+    # Keep this check name stable; EXTERNAL_PR_MODEL records the effective model.
+    name: PR-Agent (external)
+    # Drafts skip review; ready_for_review starts it. Saves a runner per draft push.
+    if: github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
-    # Two models of different lineage, so a thin answer from one is visible
-    # against the other rather than passing for a clean bill of health.
-    strategy:
-      fail-fast: false
-      matrix:
-        model:
-          - openrouter/google/gemini-3.7-flash
-          - openrouter/qwen/qwen3-coder-flash
+    timeout-minutes: 45
+    env:
+      # Keep the review model pinned for reproducible review evidence.
+      EXTERNAL_PR_MODEL: openrouter/inception/mercury-2.5
+      PR_URL: ${{ inputs.pr_url || github.event.pull_request.html_url }}
     steps:
+      - name: Validate mandatory PR-Agent credential
+        id: review-key
+        env:
+          PRA_KEY: ${{ secrets.OPENROUTER_PR_APPROVER_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PRA_KEY//[[:space:]]/}" ]]; then
+            echo '::error::OPENROUTER_PR_APPROVER_KEY is required for external PR review.'
+            exit 1
+          fi
+
+      # PR-Agent reviews through GitHub's API. Checkout stays on the trusted default
+      # branch, so this workflow never checks out or executes pull-request code.
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Snapshot required-check evidence
+        id: phase1
+        uses: actions/github-script@v7
+        env:
+          PR_URL: ${{ env.PR_URL }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          # Commit exact prerequisite check names for this repository; never include this
+          # review or its approval job (that would create a dependency cycle).
+          REQUIRED_REVIEW_CHECK_NAMES: '["Build & test", "Secrets scan", "SAST", "Code review (OCR)", "PR review (PR-Agent)"]'
+        with:
+          script: |
+            const fs = require('fs');
+            let requiredCheckNames;
+            try {
+              requiredCheckNames = JSON.parse(process.env.REQUIRED_REVIEW_CHECK_NAMES || '');
+            } catch {
+              throw new Error('REQUIRED_REVIEW_CHECK_NAMES must be a nonempty JSON array of exact check names.');
+            }
+            if (!Array.isArray(requiredCheckNames) || requiredCheckNames.length === 0 ||
+                requiredCheckNames.some(name => typeof name !== 'string' || name.length === 0 || name !== name.trim()) ||
+                new Set(requiredCheckNames).size !== requiredCheckNames.length) {
+              throw new Error('REQUIRED_REVIEW_CHECK_NAMES must contain distinct, nonempty, trimmed check names.');
+            }
+            const waitUntil = Date.now() + 25 * 60 * 1000;
+            const match = process.env.PR_URL.match(/\/pull\/(\d+)\/?$/);
+            if (!match) {
+              throw new Error(`Invalid pull-request URL: ${process.env.PR_URL}`);
+            }
+
+            const pull_number = Number(match[1]);
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number,
+            });
+            let phase1Checks = [];
+            let missing = [];
+            let incomplete = [];
+            const allowedConclusions = new Set(['success']);
+            while (true) {
+              const checkRuns = await github.paginate(github.rest.checks.listForRef, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: pr.head.sha,
+                per_page: 100,
+              });
+              phase1Checks = requiredCheckNames.map((name) => checkRuns
+                .filter((check) => check.name === name)
+                .sort((a, b) => Number(b.id) - Number(a.id))[0])
+                .filter(Boolean);
+              missing = requiredCheckNames.filter((name) => !phase1Checks.some((check) => check.name === name));
+              incomplete = phase1Checks.filter((check) =>
+                check.status !== 'completed' || !allowedConclusions.has(check.conclusion)
+              );
+              if (missing.length === 0 && incomplete.length === 0) break;
+              const draftDeferredChecks = new Set(['Code review (OCR)', 'PR review (PR-Agent)']);
+              const readyForReview = context.payload.action === 'ready_for_review';
+              const terminalFailure = incomplete.some((check) => check.status === 'completed' &&
+                !(readyForReview && check.conclusion === 'skipped' && draftDeferredChecks.has(check.name))
+              );
+              if (terminalFailure) break;
+              if (Date.now() >= waitUntil) break;
+              await new Promise((resolve) => setTimeout(resolve, 15_000));
+            }
+            const passed = missing.length === 0 && incomplete.length === 0;
+            const body = pr.body || '';
+            const linkMatch = body.match(/(?:[Ff]ixes|[Cc]loses|[Rr]esolves)\s+#(\d+)/);
+            let workItemNodeId = null;
+            if (linkMatch) {
+              const issueNumber = Number(linkMatch[1]);
+              try {
+                const query = `
+                  query($owner: String!, $repo: String!, $issue: Int!) {
+                    repository(owner: $owner, name: $repo) {
+                      issue(number: $issue) {
+                        id
+                      }
+                    }
+                  }
+                `;
+                const variables = {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue: issueNumber
+                };
+                const result = await github.graphql(query, variables);
+                workItemNodeId = result.repository.issue.id;
+              } catch (e) {
+                console.error("Could not fetch issue node id", e);
+              }
+            }
+
+            const evidence = {
+              schemaVersion: 1,
+              phase: 'phase1',
+              collectedAt: new Date().toISOString(),
+              pr: { number: pull_number, url: pr.html_url, headSha: pr.head.sha, workItemNodeId },
+              checks: phase1Checks.map((check) => ({
+                name: check.name,
+                status: check.status,
+                conclusion: check.conclusion,
+                detailsUrl: check.details_url,
+              })),
+              verdict: passed ? 'pass' : 'block',
+              blockReasons: passed ? [] : [
+                ...missing.map((name) => `${name}: check evidence is missing.`),
+                ...incomplete.map((check) => `${check.name}: ${check.status}/${check.conclusion}`),
+              ].filter(Boolean),
+            };
+            fs.writeFileSync('phase1-evidence.json', `${JSON.stringify(evidence, null, 2)}\n`);
+            core.setOutput('pr_number', String(pull_number));
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('passed', String(passed));
+
+      - name: Resolve latest OCR artifact
+        id: ocr-source
+        if: steps.phase1.outputs.passed == 'true'
+        uses: actions/github-script@v7
+        env:
+          PR_HEAD: ${{ steps.phase1.outputs.head_sha }}
+        with:
+          script: |
+            const fs = require('fs');
+            const { resolveOcrArtifact } = require('./.github/scripts/validate-ocr-result.cjs');
+            const source = await resolveOcrArtifact(github, context.repo, process.env.PR_HEAD);
+            fs.rmSync('ocr-artifacts', { recursive: true, force: true });
+            fs.rmSync('ocr-evidence.json', { force: true });
+            fs.writeFileSync('ocr-source.json', JSON.stringify(source));
+            core.setOutput('run_id', String(source.runId));
+            core.setOutput('artifact_name', source.artifactName);
+
+      - name: Download raw OCR evidence
+        if: steps.phase1.outputs.passed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.ocr-source.outputs.artifact_name }}
+          path: ocr-artifacts
+          run-id: ${{ steps.ocr-source.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Require complete OCR evidence
+        if: steps.phase1.outputs.passed == 'true'
+        env:
+          PR_HEAD: ${{ steps.phase1.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.phase1.outputs.pr_number }}
+          GH_TOKEN: ${{ github.token }}
+          OCR_CHANGED_FILES: ${{ runner.temp }}/ocr-changed-files.txt
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --paginate --jq '.[] | [.status, .filename] | @tsv' > "$RUNNER_TEMP/ocr-pr-files.tsv"
+          # GitHub truncates the raw list (deletions included) at 3000 files.
+          if [ "$(wc -l < "$RUNNER_TEMP/ocr-pr-files.tsv")" -ge 3000 ]; then
+            echo '::error::The PR changes 3000+ files; GitHub truncates the list, so OCR coverage cannot be verified.'
+            exit 1
+          fi
+          awk -F '\t' '$1 != "removed" { print $2 }' "$RUNNER_TEMP/ocr-pr-files.tsv" > "$OCR_CHANGED_FILES"
+          node .github/scripts/validate-ocr-result.cjs ocr-artifacts/ocr-result.json "$PR_HEAD" ocr-source.json > ocr-evidence.json
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - run: pip install --quiet pr-agent==0.42.0 # pinned: this job reads the repo and posts to the PR
+      - run: pip install --quiet pr-agent==0.45.0 # pinned: this job reads the repo and posts to the PR
+
+      - name: Record review start
+        id: review-start
+        run: echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Review
+        id: review
+        if: steps.phase1.outputs.passed == 'true'
         env:
-          OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_PR_APPROVER_KEY }}
           OPENROUTER__API_BASE: https://openrouter.ai/api/v1
-          CONFIG__MODEL: ${{ matrix.model }}
+          CONFIG__MODEL: ${{ env.EXTERNAL_PR_MODEL }}
           CONFIG__FALLBACK_MODELS: '[]'
           # PR-Agent hard-fails on any model absent from its built-in MAX_TOKENS
-          # table, and neither OpenRouter slug is in it. Without this the job
+          # table, and this OpenRouter slug is not in it. Without this the job
           # posts nothing — the exact silent-green this gate exists to prevent.
-          CONFIG__CUSTOM_MODEL_MAX_TOKENS: '1000000'
-          # Both matrix legs publish under the same "PR Reviewer Guide" header;
-          # persistent comments would make the second overwrite the first, and
-          # two opinions is the whole point of running two models.
+          # Mercury 2.5's published context limit; do not inherit Qwen's 1M window.
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: '260000'
           PR_REVIEWER__PERSISTENT_COMMENT: 'false'
           CONFIG__GIT_PROVIDER: github
           GITHUB__USER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB__DEPLOYMENT_TYPE: user
           CONFIG__PUBLISH_OUTPUT: 'true'
-        run: python -m pr_agent.cli --pr_url "${{ github.event.pull_request.html_url }}" review
+        run: python -m pr_agent.cli --pr_url "$PR_URL" review
+
+      - name: Build external-review evidence
+        id: phase2
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          REVIEW_STARTED_AT: ${{ steps.review-start.outputs.timestamp }}
+          REVIEW_OUTCOME: ${{ steps.review.outcome }}
+          REQUESTED_MODEL: ${{ env.EXTERNAL_PR_MODEL }}
+          SOURCE_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          SOURCE_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        with:
+          script: |
+            const crypto = require('crypto');
+            const fs = require('fs');
+            const phase1 = JSON.parse(fs.readFileSync('phase1-evidence.json', 'utf8'));
+            const evidence = {
+              schemaVersion: 1,
+              phase: 'phase2',
+              sourceWorkflowRun: Number(process.env.SOURCE_WORKFLOW_RUN_ID),
+              sourceRunAttempt: Number(process.env.SOURCE_WORKFLOW_RUN_ATTEMPT),
+              collectedAt: new Date().toISOString(),
+              pr: phase1.pr,
+              phase1,
+              externalReview: {
+                reviewer: 'PR-Agent',
+                requestedModel: process.env.REQUESTED_MODEL,
+                credentialChannel: 'pr-approver',
+                status: 'unavailable',
+                verdict: 'block',
+              },
+              verdict: 'block',
+              blockReasons: [],
+            };
+
+            if (phase1.verdict !== 'pass') {
+              evidence.blockReasons.push('Required-check evidence did not pass.');
+            } else if (process.env.REVIEW_OUTCOME !== 'success') {
+              evidence.blockReasons.push(`PR-Agent job outcome: ${process.env.REVIEW_OUTCOME || 'not-run'}.`);
+            } else {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: phase1.pr.number,
+                per_page: 100,
+              });
+              const startedAt = Date.parse(process.env.REVIEW_STARTED_AT);
+              const reviewComment = comments
+                .filter((comment) =>
+                  comment.user?.login === 'github-actions[bot]' &&
+                  Date.parse(comment.created_at) >= startedAt &&
+                  /PR Reviewer Guide/i.test(comment.body || '')
+                )
+                .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+
+              if (!reviewComment) {
+                evidence.blockReasons.push('PR-Agent completed without a published review comment.');
+              } else {
+                const body = reviewComment.body || '';
+                evidence.externalReview = {
+                  reviewer: 'PR-Agent',
+                  requestedModel: process.env.REQUESTED_MODEL,
+                  credentialChannel: 'pr-approver',
+                  status: 'completed',
+                  commentId: reviewComment.id,
+                  commentUrl: reviewComment.html_url,
+                  commentCreatedAt: reviewComment.created_at,
+                  contentSha256: crypto.createHash('sha256').update(body).digest('hex'),
+                  verdict: 'pass',
+                };
+              }
+            }
+
+            try {
+              evidence.ocrReview = JSON.parse(fs.readFileSync('ocr-evidence.json', 'utf8'));
+              if (evidence.ocrReview.status !== 'complete' || evidence.ocrReview.headSha !== evidence.pr.headSha) {
+                throw new Error('Incomplete OCR evidence');
+              }
+            } catch {
+              evidence.blockReasons.push('Complete current-head OCR evidence is unavailable.');
+            }
+
+            if (evidence.phase1.verdict === 'pass' && evidence.externalReview.verdict === 'pass' && evidence.blockReasons.length === 0) {
+              evidence.verdict = 'pass';
+            }
+            fs.writeFileSync('phase2-evidence.json', `${JSON.stringify(evidence, null, 2)}\n`);
+            core.setOutput('verdict', evidence.verdict);
+
+      - name: Upload external-review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-evidence-${{ steps.phase1.outputs.pr_number }}-${{ steps.phase1.outputs.head_sha }}-${{ github.run_attempt }}
+          path: phase2-evidence.json
+          retention-days: 14
+
+      - name: Fail closed when review evidence blocks
+        if: always() && steps.phase2.outputs.verdict != 'pass'
+        run: exit 1

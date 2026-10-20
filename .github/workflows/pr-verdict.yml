@@ -1,0 +1,454 @@
+name: PR Verdict
+
+# Binding approval receives the external review workflow's immutable evidence artifact,
+# revalidates the pull request's head SHA, and uses only the independent reviewer
+# App identity to cast a formal GitHub APPROVE review. It never runs PR code.
+on:
+  workflow_run:
+    workflows: [Independent Review]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  checks: read
+  issues: read
+  pull-requests: read
+
+# Serialize publication for one PR revision without cancelling a pending check.
+concurrency:
+  group: binding-verdict-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  verdict:
+    name: PR Gatekeeper verdict
+    # Hosted runner: the self-hosted runners are reused and also run PR jobs.
+    runs-on: ubuntu-latest
+    # Holds the App key. Josh restricts this environment to main, so PR workflows cannot read it.
+    environment: binding-approval
+    timeout-minutes: 20
+    steps:
+      - name: Decode external-review App key
+        id: app-key
+        env:
+          PRIVATE_KEY_B64: ${{ secrets.CODE_REVIEW_AND_PR_BOT_APP_PRIVATE_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          # A value *derived* from a secret is a new string the runner has never seen, so it
+          # is not auto-masked -- and create-github-app-token logs its `with:` inputs. Collapse
+          # the PEM to a single line of literal \n escapes (::add-mask:: only masks single-line
+          # values), mask it before anything else, then emit it; the action's private-key input
+          # un-escapes \n back to real newlines.
+          # tr -d '\r' first: ::add-mask:: treats a CR as a line terminator, so a CRLF-sourced
+          # PEM would register a mask truncated at the first CR while the full key still
+          # reached $GITHUB_OUTPUT and the with: block the runner logs for the next step.
+          private_key="$(printf '%s' "$PRIVATE_KEY_B64" | base64 --decode | tr -d '\r' | awk 'BEGIN{ORS="\\n"}{print}')"
+          printf '%s\n' "::add-mask::${private_key}"
+          case "$private_key" in
+            '-----BEGIN '*'PRIVATE KEY-----'*) ;;
+            *) echo 'Decoded CODE_REVIEW_AND_PR_BOT_APP_PRIVATE_KEY_B64 is not a PEM private key'; exit 1 ;;
+          esac
+          printf 'private_key=%s\n' "$private_key" >> "$GITHUB_OUTPUT"
+
+      - name: Create independent reviewer token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.CODE_REVIEW_AND_PR_BOT_REVIEW_APP_ID }}
+          private-key: ${{ steps.app-key.outputs.private_key }}
+
+      - name: Start binding approval check on the PR head
+        id: check-target
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const source = context.payload.workflow_run;
+            if (!['pull_request', 'workflow_dispatch'].includes(source.event) || source.path !== '.github/workflows/independent-review.yml') {
+              throw new Error('Unexpected source workflow for binding approval.');
+            }
+            // workflow_run runs on main. Resolve the PR from trusted API metadata,
+            // not from the downloaded artifact or workflow_run's check suite.
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', per_page: 100,
+            });
+            const matching = prs.filter(pr => pr.state === 'open' &&
+              pr.head.sha === source.head_sha &&
+              pr.head.ref === source.head_branch &&
+              pr.head.repo?.full_name === source.head_repository?.full_name);
+            if (matching.length !== 1) throw new Error('Source must identify exactly one current open pull request.');
+            const pr = matching[0];
+            const { data: check } = await github.rest.checks.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              name: 'Binding approval', head_sha: pr.head.sha, status: 'in_progress',
+              external_id: String(context.runId), details_url: source.html_url,
+              output: { title: 'Binding approval pending', summary: 'Validating review evidence and formal bot approval.' },
+            });
+            core.setOutput('check_id', String(check.id));
+            core.setOutput('pr_number', String(pr.number));
+            core.setOutput('head_sha', pr.head.sha);
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Download external-review evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: phase2-evidence-${{ steps.check-target.outputs.pr_number }}-${{ steps.check-target.outputs.head_sha }}-${{ github.event.workflow_run.run_attempt }}
+          path: phase2-artifacts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve trusted OCR artifact
+        id: trusted-ocr-source
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            try {
+              const { resolveOcrArtifact } = require('./.github/scripts/validate-ocr-result.cjs');
+              const files = [];
+              const walk = directory => {
+                for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+                  const full = path.join(directory, entry.name);
+                  entry.isDirectory() ? walk(full) : files.push(full);
+                }
+              };
+              walk('phase2-artifacts');
+              const paths = files.filter(file => path.basename(file) === 'phase2-evidence.json');
+              if (paths.length !== 1) throw new Error('Exactly one external-review evidence file is required.');
+              const evidence = JSON.parse(fs.readFileSync(paths[0], 'utf8'));
+              const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: evidence.pr.number });
+              if (pr.state !== 'open' || pr.head.sha !== evidence.pr.headSha ||
+                  context.payload.workflow_run.head_sha !== pr.head.sha) throw new Error('OCR evidence source is stale.');
+              const source = await resolveOcrArtifact(github, context.repo, pr.head.sha);
+              fs.rmSync('trusted-ocr', { recursive: true, force: true });
+              fs.writeFileSync('trusted-ocr-source.json', JSON.stringify(source));
+              core.setOutput('run_id', String(source.runId));
+              core.setOutput('artifact_name', source.artifactName);
+              core.setOutput('resolved', 'true');
+            } catch (error) {
+              const message = String(error?.message || '');
+              const reason = message.startsWith('OCR:')
+                ? 'Trusted OCR resolution failed: the latest successful OCR check or its raw result artifact is missing, expired, or ambiguous.'
+                : 'Trusted OCR resolution failed: source PR metadata or external-review evidence is missing, malformed, or stale.';
+              core.setOutput('resolved', 'false');
+              core.setOutput('error', reason);
+            }
+
+      - name: Download trusted raw OCR evidence
+        id: trusted-ocr-download
+        if: steps.trusted-ocr-source.outputs.resolved == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.trusted-ocr-source.outputs.artifact_name }}
+          path: trusted-ocr
+          run-id: ${{ steps.trusted-ocr-source.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate frozen evidence
+        id: verdict
+        env:
+          PR_NUMBER: ${{ steps.check-target.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.check-target.outputs.head_sha }}
+          TRUSTED_OCR_RESOLUTION_ERROR: ${{ steps.trusted-ocr-source.outputs.error }}
+          TRUSTED_OCR_DOWNLOAD_OUTCOME: ${{ steps.trusted-ocr-download.outcome }}
+          # Trusted default-branch configuration; keep identical to the producer list.
+          REQUIRED_REVIEW_CHECK_NAMES: '["Build & test", "Secrets scan", "SAST", "Code review (OCR)", "PR review (PR-Agent)"]'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            let requiredCheckNames;
+            try {
+              requiredCheckNames = JSON.parse(process.env.REQUIRED_REVIEW_CHECK_NAMES || '');
+            } catch {
+              throw new Error('REQUIRED_REVIEW_CHECK_NAMES must be a nonempty JSON array of exact check names.');
+            }
+            if (!Array.isArray(requiredCheckNames) || requiredCheckNames.length === 0 ||
+                requiredCheckNames.some(name => typeof name !== 'string' || name.length === 0 || name !== name.trim()) ||
+                new Set(requiredCheckNames).size !== requiredCheckNames.length) {
+              throw new Error('REQUIRED_REVIEW_CHECK_NAMES must contain distinct, nonempty, trimmed check names.');
+            }
+            const files = [];
+            const walk = (directory) => {
+              if (!fs.existsSync(directory)) return;
+              for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+                const fullPath = path.join(directory, entry.name);
+                entry.isDirectory() ? walk(fullPath) : files.push(fullPath);
+              }
+            };
+            walk('phase2-artifacts');
+            const evidencePath = files.find((file) => path.basename(file) === 'phase2-evidence.json');
+            const verdict = {
+              schemaVersion: 1,
+              phase: 'phase3',
+              collectedAt: new Date().toISOString(),
+              sourceWorkflowRun: context.payload.workflow_run.id,
+              verdict: 'block',
+              blockReasons: [],
+              approval: { status: 'not-attempted' },
+            };
+            const trustedOcrResolutionError = process.env.TRUSTED_OCR_RESOLUTION_ERROR || '';
+            const trustedOcrDownloadOutcome = process.env.TRUSTED_OCR_DOWNLOAD_OUTCOME;
+            if (trustedOcrResolutionError) {
+              verdict.blockReasons.push(trustedOcrResolutionError);
+            } else if (trustedOcrDownloadOutcome !== 'success') {
+              verdict.blockReasons.push('Trusted OCR result artifact could not be downloaded.');
+            }
+
+            let evidence;
+            if (!evidencePath) {
+              verdict.blockReasons.push('External-review evidence artifact is missing.');
+            } else {
+              try {
+                evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+              } catch {
+                verdict.blockReasons.push('External-review evidence artifact is malformed.');
+              }
+            }
+            if (context.payload.workflow_run.conclusion !== 'success') {
+              verdict.blockReasons.push(`External-review workflow conclusion: ${context.payload.workflow_run.conclusion}.`);
+            }
+            if (evidence && (evidence.sourceWorkflowRun !== context.payload.workflow_run.id ||
+                evidence.sourceRunAttempt !== context.payload.workflow_run.run_attempt)) {
+              verdict.blockReasons.push('External-review evidence does not match the source workflow run attempt.');
+            }
+            if (evidence && (evidence.pr?.number !== Number(process.env.PR_NUMBER) ||
+                evidence.pr?.headSha !== process.env.HEAD_SHA)) {
+              verdict.blockReasons.push('Evidence does not match the API-resolved source pull request.');
+            }
+            if (evidence) {
+              verdict.pr = evidence.pr;
+              verdict.phase2EvidenceSha256 = require('crypto')
+                .createHash('sha256').update(JSON.stringify(evidence)).digest('hex');
+              const checks = evidence.phase1?.checks;
+              const successfulChecks = Array.isArray(checks) && checks.length > 0 &&
+                checks.every(check => typeof check?.name === 'string' && check.name.length > 0 &&
+                  check.name === check.name.trim() && check.status === 'completed' && check.conclusion === 'success') &&
+                new Set(checks.map(check => check.name)).size === checks.length;
+              const exactCheckNames = successfulChecks && checks.length === requiredCheckNames.length &&
+                requiredCheckNames.every(name => checks.some(check => check.name === name));
+              if (!exactCheckNames || evidence.schemaVersion !== 1 || evidence.phase1?.verdict !== 'pass' ||
+                  evidence.externalReview?.status !== 'completed' || evidence.externalReview?.verdict !== 'pass' ||
+                  evidence.externalReview?.requestedModel !== 'openrouter/inception/mercury-2.5' ||
+                  evidence.verdict !== 'pass') {
+                verdict.blockReasons.push('External-review evidence does not contain a complete pass.');
+              } else {
+                const { data: pr } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: evidence.pr.number,
+                });
+                if (pr.state !== 'open') verdict.blockReasons.push(`Pull request is ${pr.state}.`);
+                if (pr.head.sha !== evidence.pr.headSha) verdict.blockReasons.push('Pull request head SHA changed after review.');
+                if (context.payload.workflow_run.head_sha !== evidence.pr.headSha) {
+                  verdict.blockReasons.push('Evidence revision does not match the source workflow run.');
+                }
+                // The artifact is PR-controlled input. Independently recompute prerequisites
+                // and verify the published review rather than trusting its pass flags.
+                const liveChecks = await github.paginate(github.rest.checks.listForRef, {
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  ref: evidence.pr.headSha, per_page: 100,
+                });
+                for (const name of requiredCheckNames) {
+                  const check = liveChecks.filter(check => check.name === name)
+                    .sort((a, b) => String(b.completed_at || b.started_at || '').localeCompare(String(a.completed_at || a.started_at || '')))[0];
+                  if (!check || check.status !== 'completed' || check.conclusion !== 'success') {
+                    verdict.blockReasons.push(`${name}: live required check is not completed/successful.`);
+                  }
+                }
+                if (!trustedOcrResolutionError && trustedOcrDownloadOutcome === 'success') {
+                  try {
+                    const { validateOcrResult } = require('./.github/scripts/validate-ocr-result.cjs');
+                    const raw = fs.readFileSync('trusted-ocr/ocr-result.json', 'utf8');
+                    const prFiles = await github.paginate(github.rest.pulls.listFiles, {
+                      ...context.repo, pull_number: evidence.pr.number, per_page: 100,
+                    });
+                    // GitHub truncates the raw list (deletions included) at 3000; coverage beyond that cannot be verified.
+                    if (prFiles.length >= 3000) throw new Error('PR file list is truncated');
+                    const changedFiles = prFiles.filter(file => file.status !== 'removed').map(file => file.filename);
+                    validateOcrResult(JSON.parse(raw), evidence.pr.headSha, changedFiles);
+                    const source = JSON.parse(fs.readFileSync('trusted-ocr-source.json', 'utf8'));
+                    const recorded = evidence.ocrReview;
+                    const digest = require('crypto').createHash('sha256').update(raw).digest('hex');
+                    if (recorded?.status !== 'complete' || recorded.contentSha256 !== digest ||
+                        ['runId', 'attempt', 'artifactName', 'headSha'].some(key => recorded.source?.[key] !== source[key])) {
+                      throw new Error('Producer OCR record does not match independently downloaded evidence');
+                    }
+                  } catch {
+                    verdict.blockReasons.push('Trusted raw OCR evidence is missing, stale, partial or inconsistent.');
+                  }
+                }
+                // A PR that changes .github/ ran its own workflows and review scripts, so its
+                // review evidence cannot vouch for itself: the repo owner must approve this head.
+                const prFileList = await github.paginate(github.rest.pulls.listFiles, {
+                  ...context.repo, pull_number: evidence.pr.number, per_page: 100,
+                });
+                if (prFileList.length >= 3000 || prFileList.some(file =>
+                    [file.filename, file.previous_filename].some(name => name?.startsWith('.github/')))) {
+                  const reviews = await github.paginate(github.rest.pulls.listReviews, {
+                    ...context.repo, pull_number: evidence.pr.number, per_page: 100,
+                  });
+                  const ownerReview = reviews.filter(review => review.user?.login === context.repo.owner &&
+                    review.state !== 'COMMENTED').pop();
+                  if (ownerReview?.state !== 'APPROVED' || ownerReview.commit_id !== evidence.pr.headSha) {
+                    verdict.blockReasons.push(`This PR changes .github/ (workflows or review scripts): ${context.repo.owner} must approve the current head, then re-run Independent Review.`);
+                  }
+                }
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: evidence.pr.number, per_page: 100,
+                });
+                const comment = comments.find(comment => comment.id === evidence.externalReview.commentId);
+                const startedAt = Date.parse(context.payload.workflow_run.run_started_at || context.payload.workflow_run.created_at);
+                const validReview = comment && comment.user?.login === 'github-actions[bot]' &&
+                  Number.isFinite(startedAt) && Date.parse(comment.created_at) >= startedAt &&
+                  /PR Reviewer Guide/i.test(comment.body || '') &&
+                  require('crypto').createHash('sha256').update(comment.body || '').digest('hex') === evidence.externalReview.contentSha256;
+                if (!validReview) {
+                  verdict.blockReasons.push('Published external-review evidence is missing, changed, stale, or from an unexpected actor.');
+                }
+              }
+            }
+            if (verdict.blockReasons.length === 0) verdict.verdict = 'pass';
+            fs.writeFileSync('phase3-verdict.json', `${JSON.stringify(verdict, null, 2)}\n`);
+            core.setOutput('pass', String(verdict.verdict === 'pass'));
+            core.setOutput('pr_number', String(verdict.pr?.number || 'unknown'));
+            core.setOutput('head_sha', verdict.pr?.headSha || 'unknown');
+
+      - name: Submit binding review
+        id: approval
+        if: steps.verdict.outputs.pass == 'true'
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ steps.verdict.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.verdict.outputs.head_sha }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const fs = require('fs');
+            // The token action validates the configured App ID and private key when
+            // minting this token. Its app-slug output identifies that authenticated App.
+            if (process.env.APP_SLUG !== 'code-review-and-pr-bot') {
+              throw new Error(`Refusing approval from unexpected App: ${process.env.APP_SLUG}`);
+            }
+
+            const { data: currentPr } = await github.rest.pulls.get({
+              owner: context.repo.owner, repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            });
+            if (currentPr.state !== 'open' || currentPr.head.sha !== process.env.HEAD_SHA) {
+              throw new Error('Pull request changed before binding approval.');
+            }
+            const { data: review } = await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+              commit_id: process.env.HEAD_SHA,
+              event: 'APPROVE',
+              body: [
+                'Binding approval — PR Gatekeeper verdict: PASS.',
+                '',
+                `Frozen SHA: \`${process.env.HEAD_SHA}\``,
+                `External-review workflow run: ${context.payload.workflow_run.html_url}`,
+                '',
+                'This formal approval confirms the external review evidence and unchanged reviewed SHA.',
+              ].join('\n'),
+            });
+            const actor = review.user?.login;
+            if (actor !== 'code-review-and-pr-bot[bot]' || review.state !== 'APPROVED' || review.commit_id !== process.env.HEAD_SHA) {
+              throw new Error(`Approval was submitted by unexpected identity: ${actor}`);
+            }
+            const verdict = JSON.parse(fs.readFileSync('phase3-verdict.json', 'utf8'));
+            verdict.approval = {
+              status: 'approved',
+              reviewId: review.id,
+              reviewUrl: review.html_url,
+              actor,
+              submittedAt: new Date().toISOString(),
+            };
+            fs.writeFileSync('phase3-verdict.json', `${JSON.stringify(verdict, null, 2)}\n`);
+
+      - name: Record approval failure
+        if: always() && steps.verdict.outputs.pass == 'true' && steps.approval.outcome != 'success'
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const verdict = JSON.parse(fs.readFileSync('phase3-verdict.json', 'utf8'));
+          verdict.approval = { status: 'failed' };
+          verdict.blockReasons.push('Formal GitHub approval was not submitted.');
+          verdict.verdict = 'block';
+          fs.writeFileSync('phase3-verdict.json', `${JSON.stringify(verdict, null, 2)}\n`);
+          NODE
+
+      - name: Publish binding approval result on the PR head
+        id: publication
+        if: always() && steps.check-target.outputs.check_id != ''
+        uses: actions/github-script@v7
+        env:
+          CHECK_ID: ${{ steps.check-target.outputs.check_id }}
+          PR_NUMBER: ${{ steps.check-target.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.check-target.outputs.head_sha }}
+          VALIDATION_PASS: ${{ steps.verdict.outputs.pass }}
+          APPROVAL_OUTCOME: ${{ steps.approval.outcome }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const fs = require('fs');
+            let passed = false;
+            let summary = 'Review evidence or formal bot approval did not complete successfully.';
+            let verdict;
+            try {
+              verdict = JSON.parse(fs.readFileSync('phase3-verdict.json', 'utf8'));
+              if (process.env.VALIDATION_PASS !== 'true' || process.env.APPROVAL_OUTCOME !== 'success' ||
+                  verdict.verdict !== 'pass' || verdict.approval?.status !== 'approved' ||
+                  verdict.pr?.number !== Number(process.env.PR_NUMBER) || verdict.pr?.headSha !== process.env.HEAD_SHA) {
+                throw new Error(summary);
+              }
+              const { data: review } = await github.rest.pulls.getReview({
+                owner: context.repo.owner, repo: context.repo.repo,
+                pull_number: Number(process.env.PR_NUMBER), review_id: verdict.approval.reviewId,
+              });
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner, repo: context.repo.repo,
+                pull_number: Number(process.env.PR_NUMBER),
+              });
+              passed = pr.state === 'open' && pr.head.sha === process.env.HEAD_SHA &&
+                review.state === 'APPROVED' && review.commit_id === process.env.HEAD_SHA &&
+                review.user?.login === 'code-review-and-pr-bot[bot]';
+              summary = passed ? 'Current PR head has validated evidence and formal code-review-and-pr-bot approval.' :
+                'The PR head changed, closed, or lacks the current bot approval.';
+            } catch (error) {
+              core.warning(`Binding approval blocked: ${error.message}`);
+            }
+            if (verdict && !passed) {
+              verdict.verdict = 'block';
+              verdict.blockReasons.push(summary);
+              fs.writeFileSync('phase3-verdict.json', `${JSON.stringify(verdict, null, 2)}\n`);
+            }
+            await github.rest.checks.update({
+              owner: context.repo.owner, repo: context.repo.repo,
+              check_run_id: Number(process.env.CHECK_ID), status: 'completed',
+              conclusion: passed ? 'success' : 'failure', completed_at: new Date().toISOString(),
+              output: { title: passed ? 'Binding approval passed' : 'Binding approval blocked', summary },
+            });
+            core.setOutput('passed', String(passed));
+
+      - name: Upload binding-approval verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-verdict-${{ steps.verdict.outputs.pr_number }}-${{ steps.verdict.outputs.head_sha }}-${{ github.run_attempt }}
+          path: phase3-verdict.json
+          retention-days: 14
+
+      - name: Fail closed without a binding approval
+        if: always() && (steps.verdict.outputs.pass != 'true' || steps.approval.outcome != 'success' || steps.publication.outputs.passed != 'true')
+        run: exit 1
