@@ -2,8 +2,8 @@ name: Refresh Champions Data
 
 on:
   schedule:
-    # Every Monday at 06:00 UTC — after Raw and weekend PPVs
-    - cron: "0 6 * * 1"
+    # Every Tuesday at 08:00 UTC — after Monday Night Raw and weekend PPVs
+    - cron: "0 8 * * 2"
   workflow_dispatch:
 
 permissions:
