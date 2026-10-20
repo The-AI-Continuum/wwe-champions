@@ -15,6 +15,10 @@ type Champion = {
   };
 };
 
+type CacheMetadata = {
+  generatedAt: string;
+};
+
 type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; champions: Champion[]; updatedAt: string }
@@ -27,6 +31,12 @@ function isChampion(value: unknown): value is Champion {
   if (!value || typeof value !== 'object') return false;
   const item = value as Record<string, unknown>;
   return typeof item.titleName === 'string' && typeof item.championName === 'string';
+}
+
+function isCacheMetadata(value: unknown): value is CacheMetadata {
+  if (!value || typeof value !== 'object') return false;
+  const generatedAt = (value as Record<string, unknown>).generatedAt;
+  return typeof generatedAt === 'string' && !Number.isNaN(Date.parse(generatedAt));
 }
 
 function formatValue(value: string | number | null | undefined, fallback = 'Unavailable') {
@@ -142,21 +152,32 @@ export function App() {
 
     async function loadChampions() {
       try {
-        const response = await fetch('/champions.json', { cache: 'no-store' });
+        const [response, metadataResponse] = await Promise.all([
+          fetch('/champions.json', { cache: 'no-store' }),
+          fetch('/metadata.json', { cache: 'no-store' }),
+        ]);
         if (!response.ok) {
           throw new Error(`Cache request failed with HTTP ${response.status}.`);
         }
+        if (!metadataResponse.ok) {
+          throw new Error(`Refresh metadata request failed with HTTP ${metadataResponse.status}.`);
+        }
 
-        const data: unknown = await response.json();
+        const [data, metadata]: [unknown, unknown] = await Promise.all([
+          response.json(),
+          metadataResponse.json(),
+        ]);
         if (!Array.isArray(data) || !data.every(isChampion)) {
           throw new Error('public/champions.json is not a valid champion array.');
         }
+        if (!isCacheMetadata(metadata)) {
+          throw new Error('public/metadata.json does not contain a valid generatedAt timestamp.');
+        }
 
         if (!cancelled) {
-          const lastModified = response.headers.get('last-modified') || new Date().toISOString();
           setState(
             data.length > 0
-              ? { status: 'ready', champions: data, updatedAt: lastModified }
+              ? { status: 'ready', champions: data, updatedAt: metadata.generatedAt }
               : { status: 'empty' },
           );
         }
