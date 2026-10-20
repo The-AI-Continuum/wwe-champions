@@ -6,10 +6,10 @@ This inventory records credential names and consumers only. Secret values belong
 
 | Name | Consumer | Delivery target | Status |
 |---|---|---|---|
-| `OPENROUTER_CODE_REVIEW_KEY` | `.github/workflows/ci.yml` — mandatory OCR review | Repository Actions secret | Delivery and successful review run unverified |
-| `OPENROUTER_PR_APPROVER_KEY` | `.github/workflows/ci.yml` and `.github/workflows/independent-review.yml` — PR-Agent reviews | Repository Actions secret | Delivery and successful review run unverified |
-| `CODE_REVIEW_AND_PR_BOT_APP_PRIVATE_KEY_B64` | `.github/workflows/pr-verdict.yml` — binding approval | `binding-approval` environment secret | Delivery and environment restriction unverified |
-| `CODE_REVIEW_AND_PR_BOT_REVIEW_APP_ID` | `.github/workflows/pr-verdict.yml` — binding approval App identity | `binding-approval` environment secret | Delivery and App installation unverified |
+| `OPENROUTER_CODE_REVIEW_KEY` | `.github/workflows/ci.yml` — mandatory OCR review | Repository Actions secret | Present in the Actions secret list per owner screenshot; successful review unverified |
+| `OPENROUTER_PR_APPROVER_KEY` | `.github/workflows/ci.yml` and `.github/workflows/independent-review.yml` — PR-Agent reviews | Repository Actions secret | Present in the Actions secret list per owner screenshot; successful review unverified |
+| `CODE_REVIEW_AND_PR_BOT_APP_PRIVATE_KEY_B64` | `.github/workflows/pr-verdict.yml` — binding approval | `binding-approval` environment secret | Present in the `binding-approval` secret list per owner screenshot; value validity and environment restriction unverified |
+| `CODE_REVIEW_AND_PR_BOT_REVIEW_APP_ID` | `.github/workflows/pr-verdict.yml` — binding approval App identity | `binding-approval` environment secret | Present in the `binding-approval` secret list per owner screenshot; App installation unverified |
 
 Phase is the intended source of Actions secret values. The project's exact Phase path and GitHub sync state have not been verified. Keep the App ID as an Actions secret; do not duplicate it as a repository variable. The `binding-approval` environment must be restricted to the default branch so pull-request workflows cannot access the reviewer private key.
 
