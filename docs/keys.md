@@ -17,8 +17,11 @@ Phase is the intended source of Actions secret values. The project's exact Phase
 
 | Name | Consumer | Delivery target | Status |
 |---|---|---|---|
-| `APP_ID` | `~/.omp/bin/gh-omp-token` | `~/.omp/secrets/gh-omp.env` | Template created; GH-OMP App ID not provisioned |
-| GH-OMP App private key | `~/.omp/bin/gh-omp-token` | `~/.omp/secrets/gh-omp.pem` (mode `600`) | Not provisioned |
+| `APP_ID` | `~/.omp/bin/gh-omp-token` | `~/.omp/secrets/gh-omp.env` | OMP App ID exists in Phase metadata; local helper config not provisioned |
+| GH-OMP App private key | `~/.omp/bin/gh-omp-token` | `~/.omp/secrets/gh-omp.pem` (mode `600`) | Private-key secret exists in Phase metadata; local PEM not provisioned |
+| `OMP_GH_APP_INSTALLATION_ID` | GH-OMP installation | Phase `operations` / Production / `/github-apps/omp` | Phase metadata entry exists; installation on this repository not verified |
+
+Phase metadata lists `OMP_GH_APP_ID`, `OMP_GH_APP_PRIVATE_KEY_B64`, and `OMP_GH_APP_INSTALLATION_ID` at `operations` / Production / `/github-apps/omp`. No values were read or copied. The local helper still requires `APP_ID` in `gh-omp.env` and the PEM in `gh-omp.pem`; those local files are absent.
 
 Install GH-OMP on the target repository before using the helper. `gh-omp-push` disables Git credential helpers and fails closed; it never falls back to Josh's GitHub login. Do not put local App credentials in the repository or chat.
 
