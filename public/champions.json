@@ -44,8 +44,8 @@
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/08/Chelsea_08022026MM_28291_PROFILE.png",
     "championshipDate": "August 2, 2026",
     "daysAsChampion": 78,
-    "lastDefenseDate": "No Title Defenses Yet",
-    "daysSinceLastDefense": null,
+    "lastDefenseDate": "September 11, 2026",
+    "daysSinceLastDefense": 38,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/chelsea-green",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=2906"

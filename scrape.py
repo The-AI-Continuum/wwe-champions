@@ -343,13 +343,15 @@ def find_current_reign_matches_url(html: str, title_url: str) -> str:
 def parse_last_defense_from_matches(html: str) -> str | None:
     soup = BeautifulSoup(html, "html.parser")
     data_rows = [row for row in extract_table_rows(soup) if row and row[0].isdigit()]
-    if len(data_rows) <= 1:
+    defense_rows = [
+        row
+        for row in data_rows
+        if len(row) >= 2 and not re.search(r"\bTITLE CHANGE\b", " ".join(row[2:]), re.IGNORECASE)
+    ]
+    if not defense_rows:
         return None
 
-    newest_row = data_rows[0]
-    if len(newest_row) < 2:
-        return None
-    return display_date(newest_row[1])
+    return display_date(defense_rows[0][1])
 
 
 def extract_active_cagematch_titles(soup: BeautifulSoup) -> list[CagematchTitle]:
