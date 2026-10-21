@@ -52,7 +52,7 @@ Then open the local URL printed by Vite, usually `http://localhost:5173`.
 
 Use **Reload snapshot** to read the available snapshot again without running an upstream scrape. Loading, empty snapshots, and failures have reader-facing messages. A persistent polite status region announces completed record counts and failures; successful retries are announced even when the count is unchanged. A failed reload preserves the previous usable snapshot.
 
-Entries use bounded side portraits and compact facts on mobile, retaining full title/name/date text and image-error fallbacks. The directory uses at most three desktop columns so wider screens do not force narrower cards.
+Entries use bounded side portraits and compact facts on mobile, retaining full title/name/date text and image-error fallbacks. Long names and titles wrap without clipping; a refreshed image URL can recover from a previous image failure. Reign lengths retain explicit day units, including numeric zero. The directory uses at most three desktop columns so wider screens do not force narrower cards.
 
 ## Build
 
