@@ -52,9 +52,17 @@ Then open the local URL printed by Vite, usually `http://localhost:5173`.
 
 Use **Reload snapshot** to read the available snapshot again without running an upstream scrape. Loading, empty snapshots, and failures have reader-facing messages. A persistent polite status region announces completed record counts and failures; successful retries are announced even when the count is unchanged. A failed reload preserves the previous usable snapshot.
 
-Entries use bounded side portraits and compact facts on mobile, retaining full title/name/date text and image-error fallbacks. The directory uses at most three desktop columns so wider screens do not force narrower cards.
+Champion requests finish their loading/retry state independently of freshness metadata. Empty snapshots immediately report the unavailable generation time and their terminal outcome while metadata is pending; a later valid metadata response can still supply the actual generation date. Failed reloads keep the previous records and restore an actionable reload button without waiting for metadata. Request identity guards keep older responses from overwriting a newer reload.
 
-Search by champion or title (case-insensitive, ignoring surrounding whitespace) and combine it with Main roster, NXT, or Evolve filtering. Roster families come only from the title name; the dashboard does not infer Raw/SmackDown affiliation. No-match results offer a keyboard-accessible reset.
+Entries use bounded side portraits and compact facts on mobile, retaining full title/name/date text and image-error fallbacks. Long names and titles wrap without clipping; a refreshed image URL can recover from a previous image failure. Reign lengths retain explicit day units, including numeric zero. The directory uses at most three desktop columns so wider screens do not force narrower cards.
+
+Metric values use brighter semibold text to take visual priority over supporting labels, while full dates remain visible without hover disclosure. Neighboring cards share identity and fact-row heights through nested CSS subgrids, including unavailable and confirmed-no-defense states. The facts retain a semantic definition list.
+
+Statistic dividers use the supported `border-white/[0.08]` utility for subtle 8% white rules, consistent across all facts. Verify computed border colors in the built page when changing this styling; unsupported opacity suffixes can silently fall back to an opaque border.
+
+Champion cards are static articles: hovering does not lift or brighten them, including with reduced motion enabled. Only real actions—the reload button and source links—receive interactive hover/focus cues and keyboard access.
+
+Search by champion or title (case-insensitive, ignoring surrounding whitespace) and combine it with Main roster, NXT, or Evolve filtering. Roster families come only from the title name; the dashboard does not infer Raw/SmackDown affiliation. Results retain snapshot order and show the matching count. No-match results offer a keyboard-accessible reset that clears both controls and returns focus to search. Filter changes announce their result count; a reloaded snapshot clears the previous filter announcement so stale counts do not linger alongside the page's reload status.
 
 ## Build
 
@@ -89,6 +97,7 @@ npm run build
 - The scraper matches exact normalized titles first, then falls back to fuzzy title and champion similarity.
 - `defenseStatus` distinguishes `known` (a defense date), `none` (a trustworthy current-reign listing containing only its dated title-change match), and `unavailable` (failed, unmatched, or incomplete history). Unknown history never means confirmed no defenses.
 - Legacy `No Title Defenses Yet` markers are ambiguous and display as **Defense history unavailable**. A known defense today preserves numeric zero; absence is stated once rather than repeated as a date and duration. Available WWE/Cagematch sources are descriptive, keyboard-accessible links on each card.
+- Defense parsing selects the current-reign match table by its number/date headers and ignores unrelated page tables. Missing or non-contiguous row numbers, unreadable dates, and incomplete rows remain unavailable rather than proving no defenses. Regression fixtures include a recorded public Cagematch match table.
 
 ## Verification
 
@@ -98,8 +107,6 @@ npm run build
 python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The Node tests cover the OCR evidence validator and snapshot announcement outcomes. Python fixtures cover defense parsing, incomplete/unmatched history, numeric zero, and cache compatibility. UI acceptance additionally requires exercising the running dashboard: search/group/reset and keyboard recovery, independent metadata failure/timeout, same-count retry and stale responses, source links, image fallbacks, reduced motion, and readable reflow.
+The Node tests cover the OCR evidence validator and snapshot announcement outcomes. Python fixtures cover defense parsing, confirmed-none versus incomplete/unmatched history, numeric zero, and cache compatibility without live upstream access. UI acceptance additionally requires exercising the running dashboard: search/group/reset and keyboard recovery, independent metadata failure/timeout, same-count retry and stale responses, source links, image fallbacks, reduced motion, and readable reflow.
 
-Compact cards share metric tracks across neighboring entries, retain complete date text, and use subdued 8% white dividers. The layout was checked at 320, 390, 640, 768, 1024, 1280, and 1536 CSS pixels. Browser semantics and automated accessibility scans do not replace a real screen-reader session or native browser zoom verification.
-
-The defense parser selects the match table by its number/date headers, rather than treating unrelated page tables as matches. A recorded public current-reign match table is included in `tests/fixtures/`; regression checks do not depend on live upstream availability. Definition lists remain real grid boxes while sharing metric tracks, preserving term/definition semantics without `display: contents`.
+Compact cards share metric tracks across neighboring entries, retain complete date text, and use subdued 8% white dividers. The layout was checked at 320, 390, 640, 768, 1024, 1280, and 1536 CSS pixels. Definition lists remain real grid boxes, preserving term/definition semantics without `display: contents`. Browser semantics and automated accessibility scans do not replace a real screen-reader session or native browser zoom verification.

@@ -127,7 +127,10 @@ export function App() {
         );
         return { status: 'error', message };
       } finally {
-        if (requestId === currentRequest.current) setIsLoading(false);
+        if (requestId === currentRequest.current) {
+          setIsLoading(false);
+          setRetrying(false);
+        }
       }
     };
 
@@ -165,7 +168,6 @@ export function App() {
         : { status: 'unavailable' };
       setFreshness(nextFreshness);
       setAnnouncement(statusMessage(result, nextFreshness));
-      setRetrying(false);
     }
   }, []);
 

@@ -52,8 +52,8 @@ export function ChampionCard({ champion }: { champion: Champion }) {
       <div className="col-span-2 flex min-w-0 gap-3 pb-3">
         <ChampionImage key={champion.imageUrl} champion={champion} />
         <div className="min-w-0 flex-1 space-y-1">
-          <h2 className="text-pretty text-xs font-semibold leading-4 text-zinc-300">{champion.titleName}</h2>
-          <p className="text-balance text-lg font-semibold leading-6 text-white">{champion.championName}</p>
+          <h2 className="break-words text-pretty text-xs font-semibold leading-4 text-zinc-300">{champion.titleName}</h2>
+          <p className="break-words text-balance text-lg font-semibold leading-6 text-white">{champion.championName}</p>
           <ChampionSources champion={champion} />
         </div>
       </div>

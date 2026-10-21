@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Champion } from './champion';
 
@@ -47,6 +47,11 @@ export function ChampionDirectory({
   // Empty until the visitor changes a filter, so the initial render never announces a count.
   const [announcement, setAnnouncement] = useState('');
   const queryRef = useRef<HTMLInputElement>(null);
+
+  // App announces snapshot reloads; discard filter counts from the previous snapshot.
+  useEffect(() => {
+    setAnnouncement('');
+  }, [champions]);
 
   const entries = useMemo(
     () =>
