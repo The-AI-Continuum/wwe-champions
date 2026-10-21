@@ -65,18 +65,20 @@ export function ChampionSources({ champion }: { champion: Champion }) {
   const links = [
     {
       href: safeSourceUrl(champion.source?.wweUrl, SOURCE_HOSTS.wweUrl),
-      text: `${champion.championName} profile on WWE.com`,
+      text: 'WWE profile',
+      context: ` for ${champion.championName}`,
     },
     {
       href: safeSourceUrl(champion.source?.cagematchUrl, SOURCE_HOSTS.cagematchUrl),
-      text: `${champion.titleName} history on Cagematch`,
+      text: 'Cagematch history',
+      context: ` for ${champion.titleName}`,
     },
-  ].filter((link): link is { href: string; text: string } => link.href !== null);
+  ].filter((link): link is { href: string; text: string; context: string } => link.href !== null);
 
   if (links.length === 0) return null;
 
   return (
-    <ul aria-label={`Sources for ${champion.championName}, ${champion.titleName}`} className="grid gap-1 text-xs">
+    <ul aria-label={`Sources for ${champion.championName}, ${champion.titleName}`} className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
       {links.map((link) => (
         <li key={link.href} className="min-w-0">
           <a
@@ -87,7 +89,7 @@ export function ChampionSources({ champion }: { champion: Champion }) {
           >
             <span>
               {link.text}
-              <span className="sr-only"> (opens in a new tab)</span>
+              <span className="sr-only">{link.context} (opens in a new tab)</span>
             </span>
             <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
           </a>

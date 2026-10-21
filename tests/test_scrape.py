@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from scrape import (
     DEFENSE_KNOWN,
@@ -69,6 +70,15 @@ class ParseLastDefenseFromMatchesTests(unittest.TestCase):
 
         self.assertEqual(parse_defense_from_matches(html), DefenseLookup(DEFENSE_UNAVAILABLE))
 
+    def test_truncated_or_undated_rows_do_not_prove_no_defenses(self):
+        for rows in [
+            "<tr><td>1</td></tr>",
+            "<tr><td>1</td><td>unknown</td><td>TITLE CHANGE</td></tr>",
+            "<tr><td>1</td><td>10.10.2026</td><td>TITLE CHANGE</td></tr><tr><td>2</td></tr>",
+        ]:
+            with self.subTest(rows=rows):
+                self.assertEqual(parse_defense_from_matches(f"<table>{rows}</table>").status, DEFENSE_UNAVAILABLE)
+
 
 def wwe(title: str = "Intercontinental Champion", champion: str = "Penta") -> WweChampion:
     return WweChampion(champion, title, "https://www.wwe.com/superstars/penta", "")
@@ -86,6 +96,15 @@ def cagematch(**overrides) -> CagematchTitle:
 
 
 class CombineRecordsDefenseTests(unittest.TestCase):
+    def setUp(self):
+        class SnapshotDate(date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 10, 21)
+        clock = patch("scrape.date", SnapshotDate)
+        clock.start()
+        self.addCleanup(clock.stop)
+
     def record(self, titles: list[CagematchTitle]) -> dict:
         return combine_records([wwe()], titles)[0]
 
@@ -97,7 +116,7 @@ class CombineRecordsDefenseTests(unittest.TestCase):
         self.assertGreater(record["daysSinceLastDefense"], 0)
 
     def test_defense_today_preserves_numeric_zero_days(self):
-        today = date.today().strftime("%B %-d, %Y")
+        today = "October 21, 2026"
         record = self.record([cagematch(defense_status=DEFENSE_KNOWN, last_defense_date=today)])
 
         self.assertEqual(record["daysSinceLastDefense"], 0)

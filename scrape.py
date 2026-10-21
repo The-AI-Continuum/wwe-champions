@@ -32,8 +32,6 @@ INDEX_PATH = Path("index.html")
 DEFENSE_KNOWN = "known"
 DEFENSE_NONE = "none"
 DEFENSE_UNAVAILABLE = "unavailable"
-# Pre-defenseStatus caches used this text for both "confirmed none" and "lookup
-# failed", so it is only ever read back as unavailable, never written.
 LEGACY_NO_DEFENSE_MARKER = "No Title Defenses Yet"
 
 USER_AGENTS = [
@@ -364,16 +362,16 @@ def parse_defense_from_matches(html: str) -> DefenseLookup:
     """
     soup = BeautifulSoup(html, "html.parser")
     data_rows = [row for row in extract_table_rows(soup) if row and row[0].isdigit()]
-    if not data_rows:
+    if not data_rows or any(len(row) < 3 or not parse_date(row[1]) or not " ".join(row[2:]).strip() for row in data_rows):
         return DefenseLookup()
 
     defense_rows = [
         row
         for row in data_rows
-        if len(row) >= 2 and not re.search(r"\bTITLE CHANGE\b", " ".join(row[2:]), re.IGNORECASE)
+        if not re.search(r"\bTITLE CHANGE\b", " ".join(row[2:]), re.IGNORECASE)
     ]
     if not defense_rows:
-        return DefenseLookup(DEFENSE_NONE)
+        return DefenseLookup(DEFENSE_NONE) if len(data_rows) == 1 else DefenseLookup()
 
     defense_date = display_date(defense_rows[0][1])
     if not defense_date:
