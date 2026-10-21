@@ -23,13 +23,13 @@ export function SnapshotNote({ updatedAt }: { updatedAt: string | null }) {
     <p className="text-xs text-zinc-400">
       {generated ? (
         <>
-          Cached snapshot generated <time dateTime={generated.iso}>{generated.label}</time> (UTC); day counts are as of
-          that date, not live.
+          Cached snapshot generated <time dateTime={generated.iso}>{generated.label}</time> (UTC).
         </>
       ) : (
-        <>Cached snapshot; generation date unavailable. Day counts are as of that unknown date, not live.</>
+        <>Cached snapshot; generation date unavailable.</>
       )}{' '}
-      Scheduled weekly refresh. Sourced from WWE.com and Cagematch; coverage is not complete verification.
+      Day counts are cached at refresh, not live; retained source values may be older.
+      {' '}Scheduled weekly refresh. Sourced from WWE.com and Cagematch; coverage is not complete verification.
     </p>
   );
 }
