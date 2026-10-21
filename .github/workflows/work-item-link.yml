@@ -1,0 +1,56 @@
+name: work-item-link
+
+# This trusted-base workflow must land before other workflows require work-item-link.
+# It only reads PR metadata; it never checks out or executes PR code.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  work-item-link:
+    name: work-item-link
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          LINEAR_CI_READ_KEY: ${{ secrets.LINEAR_CI_READ_KEY }}
+        with:
+          script: |
+            const pullRequest = context.payload.pull_request;
+            const text = `${pullRequest.title || ''}\n${pullRequest.body || ''}`;
+            const issueIds = [...new Set((text.match(/\bJOS-[1-9]\d*\b/gi) || []).map(id => id.toUpperCase()))];
+            if (issueIds.length === 0) {
+              throw new Error('PR title or description must reference a JOS Linear issue (JOS-123).');
+            }
+            const apiKey = process.env.LINEAR_CI_READ_KEY;
+            if (!apiKey?.trim()) {
+              throw new Error('LINEAR_CI_READ_KEY is required to verify PR issue references.');
+            }
+            const query = `query IssueByIdentifier($id: String!) {
+              issue(id: $id) { identifier team { key } }
+            }`;
+            for (const identifier of issueIds) {
+              let response;
+              try {
+                response = await fetch('https://api.linear.app/graphql', {
+                  method: 'POST',
+                  headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ query, variables: { id: identifier } }),
+                });
+              } catch {
+                throw new Error(`Linear lookup failed for ${identifier}; check connectivity.`);
+              }
+              if (!response.ok) {
+                throw new Error(`Linear lookup failed for ${identifier} with HTTP ${response.status}.`);
+              }
+              const result = await response.json();
+              const issue = result?.data?.issue;
+              if (result?.errors?.length || issue?.identifier?.toUpperCase() !== identifier || issue?.team?.key !== 'JOS') {
+                throw new Error(`${identifier} is not a resolvable issue in the JOS Linear team.`);
+              }
+            }
+            core.info(`Verified JOS Linear issue reference(s): ${issueIds.join(', ')}`);
