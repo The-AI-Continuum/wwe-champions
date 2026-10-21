@@ -58,6 +58,8 @@ Metric values use brighter semibold text to take visual priority over supporting
 
 Statistic dividers use the supported `border-white/[0.08]` utility for subtle 8% white rules, consistent across all facts. Verify computed border colors in the built page when changing this styling; unsupported opacity suffixes can silently fall back to an opaque border.
 
+Champion cards are static articles: hovering does not lift or brighten them, including with reduced motion enabled. Only real actions—the reload button and source links—receive interactive hover/focus cues and keyboard access.
+
 ## Build
 
 ```bash

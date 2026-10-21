@@ -48,7 +48,7 @@ function Metric({ label, value }: { label: string; value: string | number | null
 
 export function ChampionCard({ champion }: { champion: Champion }) {
   return (
-    <article className="group row-span-3 grid grid-cols-2 grid-rows-subgrid gap-x-4 gap-y-0 overflow-hidden rounded-lg border border-white/10 bg-ink-850 px-3 pb-2 pt-3 shadow-card transition duration-200 hover:-translate-y-0.5 hover:border-white/20">
+    <article className="row-span-3 grid grid-cols-2 grid-rows-subgrid gap-x-4 gap-y-0 overflow-hidden rounded-lg border border-white/10 bg-ink-850 px-3 pb-2 pt-3 shadow-card">
       <div className="col-span-2 flex min-w-0 gap-3 pb-3">
         <ChampionImage key={champion.imageUrl} champion={champion} />
         <div className="min-w-0 flex-1 space-y-1">
