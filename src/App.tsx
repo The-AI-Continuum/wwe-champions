@@ -1,5 +1,6 @@
 import { AlertCircle, CalendarDays, Trophy } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { statusMessage, type FreshnessState } from './statusMessage';
 
 type Champion = {
   titleName: string;
@@ -25,7 +26,6 @@ type LoadState =
   | { status: 'empty' }
   | { status: 'error'; message: string };
 
-type FreshnessState = { status: 'pending' | 'unavailable' } | { status: 'known'; updatedAt: string };
 
 const NO_DEFENSE = 'No Title Defenses Yet';
 
@@ -116,7 +116,7 @@ function StatusPanel({ state }: { state: Exclude<LoadState, { status: 'ready' }>
     },
     empty: {
       title: 'No champions found',
-      message: 'The available snapshot contains no champion records.',
+      message: 'The available snapshot contains no champion records. Use Reload snapshot to check again.',
     },
     error: {
       title: 'Could not load champions',
@@ -155,6 +155,7 @@ export function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
   const [championError, setChampionError] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState('');
   const currentRequest = useRef(0);
   const hasLoadedChampions = useRef(false);
 
@@ -165,10 +166,11 @@ export function App() {
     setIsLoading(true);
     setRetrying(isRetry);
     setChampionError(null);
+    setAnnouncement('');
     setFreshness({ status: 'pending' });
     if (!hasLoadedChampions.current) setState({ status: 'loading' });
 
-    const loadChampions = async () => {
+    const loadChampions = async (): Promise<Exclude<LoadState, { status: 'loading' }> | null> => {
       try {
         const response = await fetch('/champions.json', { cache: 'no-store' });
         if (!response.ok) throw new Error(`Champion snapshot request failed with HTTP ${response.status}.`);
@@ -178,21 +180,25 @@ export function App() {
           throw new Error('The champion snapshot is not a valid champion list.');
         }
 
-        if (requestId !== currentRequest.current) return false;
+        if (requestId !== currentRequest.current) return null;
         hasLoadedChampions.current = true;
-        setState(data.length > 0 ? { status: 'ready', champions: data } : { status: 'empty' });
-        return true;
+        const result: LoadState = data.length > 0 ? { status: 'ready', champions: data } : { status: 'empty' };
+        setState(result);
+        return result;
       } catch {
-        if (requestId !== currentRequest.current) return false;
-        const message = 'Champion data could not be loaded. Use Reload snapshot to try again.';
+        if (requestId !== currentRequest.current) return null;
+        const message = hasLoadedChampions.current
+          ? 'The snapshot could not be reloaded. The previous snapshot remains visible. Use Reload snapshot to try again.'
+          : 'Champion data could not be loaded. Use Reload snapshot to try again.';
         setChampionError(message);
         setFreshness({ status: 'unavailable' });
+        setAnnouncement(message);
         setState((previous) =>
           previous.status === 'ready' || previous.status === 'empty'
             ? previous
             : { status: 'error', message },
         );
-        return false;
+        return { status: 'error', message };
       } finally {
         if (requestId === currentRequest.current) setIsLoading(false);
       }
@@ -225,11 +231,13 @@ export function App() {
       }
     };
 
-    const [championsLoaded, updatedAt] = await Promise.all([loadChampions(), loadMetadata()]);
-    if (requestId === currentRequest.current) {
-      setFreshness(championsLoaded && updatedAt
+    const [result, updatedAt] = await Promise.all([loadChampions(), loadMetadata()]);
+    if (requestId === currentRequest.current && result) {
+      const nextFreshness: FreshnessState = result.status !== 'error' && updatedAt
         ? { status: 'known', updatedAt }
-        : { status: 'unavailable' });
+        : { status: 'unavailable' };
+      setFreshness(nextFreshness);
+      setAnnouncement(statusMessage(result, nextFreshness));
       setRetrying(false);
     }
   }, []);
@@ -255,10 +263,6 @@ export function App() {
             <div className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm font-medium text-zinc-400">
               <CalendarDays className="h-3.5 w-3.5 text-gold-300" aria-hidden="true" />
               {formatLastUpdated(freshness)}
-
-        <div role="status" aria-label="Freshness status" className="sr-only">
-          {formatLastUpdated(freshness)}
-        </div>
             </div>
             <div>
               <h1 className="text-3xl font-semibold tracking-normal text-white sm:text-4xl">
@@ -269,20 +273,19 @@ export function App() {
           </div>
           <button
             type="button"
-            aria-label="Reload champion snapshot"
             onClick={() => {
               if (!isLoading && !retrying) void loadSnapshot(true);
             }}
             aria-disabled={isLoading || retrying}
-            
             className="rounded-md border border-white/20 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300 aria-disabled:cursor-wait aria-disabled:opacity-60"
           >
             {retrying ? 'Reloading snapshot…' : isLoading ? 'Loading snapshot…' : 'Reload snapshot'}
           </button>
         </header>
+        <p role="status" aria-atomic="true" className="sr-only">{announcement}</p>
 
         {championError && state.status !== 'error' && (
-          <p role="alert" className="text-sm text-amber-200">{championError}</p>
+          <p className="text-sm text-amber-200">{championError}</p>
         )}
 
         {state.status === 'ready' ? (
