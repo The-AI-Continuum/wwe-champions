@@ -10,9 +10,9 @@ This inventory records credential names and consumers only. Secret values belong
 | `OPENROUTER_PR_APPROVER_KEY` | `.github/workflows/ci.yml` and `.github/workflows/independent-review.yml` — PR-Agent reviews | Repository Actions secret | Present in the Actions secret list per owner screenshot; successful review unverified |
 | `CODE_REVIEW_AND_PR_BOT_APP_PRIVATE_KEY_B64` | `.github/workflows/pr-verdict.yml` — binding approval | `binding-approval` environment secret | Present in the `binding-approval` secret list per owner screenshot; value validity and environment restriction unverified |
 | `CODE_REVIEW_AND_PR_BOT_REVIEW_APP_ID` | `.github/workflows/pr-verdict.yml` — binding approval App identity | `binding-approval` environment secret | Present in the `binding-approval` secret list per owner screenshot; App installation unverified |
-| `LINEAR_CI_READ_KEY` | `.github/workflows/ci.yml` — `work-item-link` | Repository Actions secret | Not present in the repository secret list; required before the check can pass |
+| `LINEAR_CI_READ_KEY` | `.github/workflows/ci.yml` — `work-item-link` | Repository Actions secret | Present in Phase Operations / Production / `/linear`; absent from the repository Actions secret list, so sync is still required |
 
-Phase is the intended source of Actions secret values. The project's exact Phase path and GitHub sync state have not been verified. Keep the App ID as an Actions secret; do not duplicate it as a repository variable. The `binding-approval` environment must be restricted to the default branch so pull-request workflows cannot access the reviewer private key.
+Phase is the intended source of Actions secret values. The Phase paths and GitHub sync state for the review and binding credentials above have not been verified; `LINEAR_CI_READ_KEY` is present at the path listed but is not yet synced to repository Actions. Keep the App ID as an Actions secret; do not duplicate it as a repository variable. The `binding-approval` environment must be restricted to the default branch so pull-request workflows cannot access the reviewer private key.
 
 ## Local OMP authoring bot
 
