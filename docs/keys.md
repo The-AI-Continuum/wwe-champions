@@ -7,7 +7,7 @@ This inventory records credential names and consumers only. Secret values belong
 | Name | Consumer | Delivery target | Status |
 |---|---|---|---|
 | `OPENROUTER_CODE_REVIEW_KEY` | `.github/workflows/ci.yml` — mandatory OCR review | Repository Actions secret | Present in Phase Operations / Production / `/openrouter` and in the Actions secret list per owner screenshot; successful review unverified |
-| `OPENROUTER_PR_APPROVER_KEY` | `.github/workflows/ci.yml` and `.github/workflows/independent-review.yml` — PR-Agent reviews | Repository Actions secret | Present in Phase Operations / Production / `/openrouter` and in the Actions secret list per owner screenshot; successful review unverified |
+| `OPENROUTER_PR_APPROVER_KEY` | `.github/workflows/independent-review.yml` — external PR-Agent review | Repository Actions secret | Present in Phase Operations / Production / `/openrouter` and in the Actions secret list per owner screenshot; successful review unverified |
 | `CODE_REVIEW_AND_PR_BOT_APP_PRIVATE_KEY_B64` | `.github/workflows/pr-verdict.yml` — binding approval | `binding-approval` environment secret | Present in the `binding-approval` secret list per owner screenshot; value validity and environment restriction unverified |
 | `CODE_REVIEW_AND_PR_BOT_REVIEW_APP_ID` | `.github/workflows/pr-verdict.yml` — binding approval App identity | `binding-approval` environment secret | Present in the `binding-approval` secret list per owner screenshot; App installation unverified |
 | `LINEAR_CI_READ_KEY` | `.github/workflows/work-item-link.yml` — Linear work-item validation | Repository Actions secret | Present in Phase Operations / Production / `/linear`; absent from the repository Actions secret list, so sync is still required |

@@ -64,7 +64,7 @@ jobs:
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           # Commit exact prerequisite check names for this repository; never include this
           # review or its approval job (that would create a dependency cycle).
-          REQUIRED_REVIEW_CHECK_NAMES: '["Build & test", "Secrets scan", "SAST", "Dependency audit", "work-item-link", "Code review (OCR)", "PR review (PR-Agent)"]'
+          REQUIRED_REVIEW_CHECK_NAMES: '["Build & test", "Secrets scan", "SAST", "Dependency audit", "work-item-link", "Code review (OCR)"]'
         with:
           script: |
             const fs = require('fs');
@@ -111,7 +111,7 @@ jobs:
                 check.status !== 'completed' || !allowedConclusions.has(check.conclusion)
               );
               if (missing.length === 0 && incomplete.length === 0) break;
-              const draftDeferredChecks = new Set(['Code review (OCR)', 'PR review (PR-Agent)']);
+              const draftDeferredChecks = new Set(['Code review (OCR)']);
               const readyForReview = context.payload.action === 'ready_for_review';
               const terminalFailure = incomplete.some((check) => check.status === 'completed' &&
                 !(readyForReview && check.conclusion === 'skipped' && draftDeferredChecks.has(check.name))

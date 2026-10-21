@@ -158,7 +158,7 @@ jobs:
           TRUSTED_OCR_RESOLUTION_ERROR: ${{ steps.trusted-ocr-source.outputs.error }}
           TRUSTED_OCR_DOWNLOAD_OUTCOME: ${{ steps.trusted-ocr-download.outcome }}
           # Trusted default-branch configuration; keep identical to the producer list.
-          REQUIRED_REVIEW_CHECK_NAMES: '["Build & test", "Secrets scan", "SAST", "Dependency audit", "work-item-link", "Code review (OCR)", "PR review (PR-Agent)"]'
+          REQUIRED_REVIEW_CHECK_NAMES: '["Build & test", "Secrets scan", "SAST", "Dependency audit", "work-item-link", "Code review (OCR)"]'
         uses: actions/github-script@v7
         with:
           script: |

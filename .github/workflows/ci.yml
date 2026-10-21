@@ -4,7 +4,7 @@
 #                  lint/typecheck/test/build scripts the repo already has.
 #   Secrets scan   gitleaks on the PR's commits (full history on pushes to main).
 #   Code review    Alibaba OpenCodeReview (OCR) - line-level review comments, external model.
-#   PR review      PR-Agent - PR description + review summary, external model.
+#   PR review      independent-review.yml -> PR-Agent (external), followed by Binding approval.
 #
 # Setup per repo (or once at org level):
 #   Secrets    OPENROUTER_CODE_REVIEW_KEY   OpenRouter key for OCR
@@ -241,42 +241,3 @@ jobs:
           fi
           awk -F '\t' '$1 != "removed" { print $2 }' "$RUNNER_TEMP/ocr-pr-files.tsv" > "$OCR_CHANGED_FILES"
           node .github/scripts/validate-ocr-result.cjs /tmp/ocr-result.json "$PR_HEAD" > /dev/null
-
-  pr-review:
-    name: PR review (PR-Agent)
-    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-    steps:
-      - name: Validate mandatory review credential
-        id: keys
-        env:
-          PRA_KEY: ${{ secrets.OPENROUTER_PR_APPROVER_KEY }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${PRA_KEY//[[:space:]]/}" ]]; then
-            echo '::error::OPENROUTER_PR_APPROVER_KEY is required for mandatory review.'
-            exit 1
-          fi
-
-      - uses: The-PR-Agent/pr-agent@8e5a9295973b24af4b70cafd0b660a230811ef9e # v0.47.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENROUTER.KEY: ${{ secrets.OPENROUTER_PR_APPROVER_KEY }}
-          OPENROUTER.API_BASE: https://openrouter.ai/api/v1
-          config.model: openrouter/inception/mercury-2.5
-          config.fallback_models: '[]'
-          # PR-Agent rejects models missing from its built-in table (all OpenRouter models)
-          # unless told the context window.
-          config.custom_model_max_tokens: '260000'
-          github_action_config.auto_describe: 'true'
-          github_action_config.auto_review: 'true'
-          github_action_config.auto_improve: 'false'
-          # Default is opened/reopened/ready_for_review/review_requested only - without
-          # synchronize, new pushes get no review even though the job reports success.
-          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested", "synchronize"]'
-          pr_reviewer.require_security_review: 'true'
