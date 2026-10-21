@@ -7,6 +7,7 @@ A single-repository dashboard for current WWE champions. The frontend reads a lo
 - Frontend: Vite, React, TypeScript, Tailwind CSS
 - Scraper: Python, Playwright, BeautifulSoup
 - Data cache: `public/champions.json`
+- CI credential inventory: [`docs/keys.md`](docs/keys.md)
 
 ## Prerequisites
 
@@ -19,7 +20,7 @@ A single-repository dashboard for current WWE champions. The frontend reads a lo
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r .github/requirements-scraper.txt
 python -m playwright install chromium
 npm install
 ```
