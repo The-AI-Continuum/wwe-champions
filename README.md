@@ -27,7 +27,9 @@ npm install
 
 ## Generate Champion Data
 
-Run the scraper manually whenever you want to refresh the cache:
+GitHub Actions runs this automatically every Tuesday at 08:00 UTC. If the scrape changes generated data, it opens a pull request as `gh-omp[bot]` rather than pushing directly to `main`. Review and merge the PR after the required checks pass; the dashboard's static data updates when that merge deploys.
+
+To refresh manually:
 
 ```bash
 source .venv/bin/activate
