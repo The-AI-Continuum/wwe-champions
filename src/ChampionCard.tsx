@@ -40,16 +40,16 @@ function formatDays(days: number | null | undefined) {
 function Metric({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div className="grid min-w-0 content-start border-t border-white/8 py-2">
-      <dt className="text-xs font-semibold text-zinc-200">{label}</dt>
-      <dd className="break-words text-sm text-zinc-400">{formatValue(value)}</dd>
+      <dt className="text-xs text-zinc-400">{label}</dt>
+      <dd className="break-words text-sm font-semibold tabular-nums text-zinc-100">{formatValue(value)}</dd>
     </div>
   );
 }
 
 export function ChampionCard({ champion }: { champion: Champion }) {
   return (
-    <article className="group flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-ink-850 px-3 pb-2 pt-3 shadow-card transition duration-200 hover:-translate-y-0.5 hover:border-white/20">
-      <div className="flex min-w-0 gap-3 pb-3">
+    <article className="group row-span-3 grid grid-cols-2 grid-rows-subgrid gap-x-4 gap-y-0 overflow-hidden rounded-lg border border-white/10 bg-ink-850 px-3 pb-2 pt-3 shadow-card transition duration-200 hover:-translate-y-0.5 hover:border-white/20">
+      <div className="col-span-2 flex min-w-0 gap-3 pb-3">
         <ChampionImage key={champion.imageUrl} champion={champion} />
         <div className="min-w-0 flex-1 space-y-1">
           <h2 className="break-words text-pretty text-xs font-semibold leading-4 text-zinc-300">{champion.titleName}</h2>
@@ -58,7 +58,7 @@ export function ChampionCard({ champion }: { champion: Champion }) {
         </div>
       </div>
 
-      <dl className="mt-auto grid grid-cols-2 gap-x-4">
+      <dl className="col-span-2 row-span-2 grid grid-cols-subgrid grid-rows-subgrid gap-y-0">
         <Metric label="Champion since" value={champion.championshipDate} />
         <Metric label="Reign length" value={formatDays(champion.daysAsChampion)} />
         <DefenseFacts champion={champion} />

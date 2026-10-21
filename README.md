@@ -54,6 +54,8 @@ Use **Reload snapshot** to read the available snapshot again without running an 
 
 Entries use bounded side portraits and compact facts on mobile, retaining full title/name/date text and image-error fallbacks. Long names and titles wrap without clipping; a refreshed image URL can recover from a previous image failure. Reign lengths retain explicit day units, including numeric zero. The directory uses at most three desktop columns so wider screens do not force narrower cards.
 
+Metric values use brighter semibold text to take visual priority over supporting labels, while full dates remain visible without hover disclosure. Neighboring cards share identity and fact-row heights through nested CSS subgrids, including unavailable and confirmed-no-defense states. The facts retain a semantic definition list.
+
 ## Build
 
 ```bash
