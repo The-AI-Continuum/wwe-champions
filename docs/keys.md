@@ -17,11 +17,11 @@ Phase is the intended source of Actions secret values. The project's exact Phase
 
 | Name | Consumer | Delivery target | Status |
 |---|---|---|---|
-| `APP_ID` | `~/.omp/bin/gh-omp-token` | `~/.omp/secrets/gh-omp.env` | OMP App ID exists in Phase metadata; local helper config not provisioned |
-| GH-OMP App private key | `~/.omp/bin/gh-omp-token` | `~/.omp/secrets/gh-omp.pem` (mode `600`) | Private-key secret exists in Phase metadata; local PEM not provisioned |
-| `OMP_GH_APP_INSTALLATION_ID` | GH-OMP installation | Phase `operations` / Production / `/github-apps/omp` | Phase metadata entry exists; installation on this repository not verified |
+| `OMP_GH_APP_ID` | `~/.omp/bin/gh-omp-token` | Phase `operations` / Production / `/github-apps/omp` or optional local `gh-omp.env` | Phase injection used; local config not provisioned |
+| `OMP_GH_APP_PRIVATE_KEY_B64` | `~/.omp/bin/gh-omp-token` | Phase `operations` / Production / `/github-apps/omp` or optional local `gh-omp.pem` | Phase-backed installation token successfully accessed this repository; no local PEM |
+| `OMP_GH_APP_INSTALLATION_ID` | GH-OMP installation metadata | Phase `operations` / Production / `/github-apps/omp` | Metadata entry present; repository access verified by the token check |
 
-Phase metadata lists `OMP_GH_APP_ID`, `OMP_GH_APP_PRIVATE_KEY_B64`, and `OMP_GH_APP_INSTALLATION_ID` at `operations` / Production / `/github-apps/omp`. No values were read or copied. The local helper still requires `APP_ID` in `gh-omp.env` and the PEM in `gh-omp.pem`; those local files are absent.
+The helper accepts Phase-injected `OMP_GH_APP_ID` and `OMP_GH_APP_PRIVATE_KEY_B64`; it decodes the key into a mode-600 temporary file and removes it on exit. It also supports optional local files for standalone use. It emits a token only when GitHub returns the `ghs_` installation-token format.
 
 Install GH-OMP on the target repository before using the helper. `gh-omp-push` disables Git credential helpers and fails closed; it never falls back to Josh's GitHub login. Do not put local App credentials in the repository or chat.
 
