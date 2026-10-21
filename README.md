@@ -60,6 +60,8 @@ Statistic dividers use the supported `border-white/[0.08]` utility for subtle 8%
 
 Champion cards are static articles: hovering does not lift or brighten them, including with reduced motion enabled. Only real actions—the reload button and source links—receive interactive hover/focus cues and keyboard access.
 
+Search by champion or title (case-insensitive, ignoring surrounding whitespace) and combine it with Main roster, NXT, or Evolve filtering. Roster families come only from the title name; the dashboard does not infer Raw/SmackDown affiliation. Results retain snapshot order and show the matching count. No-match results offer a keyboard-accessible reset that clears both controls and returns focus to search. Filter changes announce their result count; a reloaded snapshot clears the previous filter announcement so stale counts do not linger alongside the page's reload status.
+
 ## Build
 
 ```bash
