@@ -29,7 +29,10 @@ CAGEMATCH_TITLES_URL = "https://www.cagematch.net/?id=8&nr=1&page=9"
 OUTPUT_PATH = Path("public/champions.json")
 METADATA_PATH = Path("public/metadata.json")
 INDEX_PATH = Path("index.html")
-NO_DEFENSE = "No Title Defenses Yet"
+DEFENSE_KNOWN = "known"
+DEFENSE_NONE = "none"
+DEFENSE_UNAVAILABLE = "unavailable"
+LEGACY_NO_DEFENSE_MARKER = "No Title Defenses Yet"
 
 USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -82,6 +85,14 @@ class CagematchTitle:
     days_as_champion: int | None = None
     last_defense_date: str | None = None
     cagematch_url: str = ""
+    # Unavailable until a defense lookup positively resolves to known or none.
+    defense_status: str = DEFENSE_UNAVAILABLE
+
+
+@dataclass
+class DefenseLookup:
+    status: str = DEFENSE_UNAVAILABLE
+    date: str | None = None
 
 
 def normalize_text(value: str | None) -> str:
@@ -115,7 +126,7 @@ def similarity(left: str, right: str) -> float:
 
 
 def parse_date(value: str | None) -> date | None:
-    if not value or value == NO_DEFENSE:
+    if not value or value == LEGACY_NO_DEFENSE_MARKER:
         return None
     try:
         european_date = re.search(r"\b\d{1,2}\.\d{1,2}\.\d{4}\b", value)
@@ -329,7 +340,9 @@ async def enrich_cagematch_defenses(page, titles: list[CagematchTitle]) -> None:
         except (PlaywrightError, TimeoutError):
             continue
 
-        title.last_defense_date = parse_last_defense_from_matches(matches_html)
+        lookup = parse_defense_from_matches(matches_html)
+        title.defense_status = lookup.status
+        title.last_defense_date = lookup.date
 
 
 def find_current_reign_matches_url(html: str, title_url: str) -> str:
@@ -341,18 +354,48 @@ def find_current_reign_matches_url(html: str, title_url: str) -> str:
     return ""
 
 
-def parse_last_defense_from_matches(html: str) -> str | None:
+def parse_defense_from_matches(html: str) -> DefenseLookup:
+    """Classify a current-reign match listing as known, confirmed none, or unavailable.
+
+    "none" is only trustworthy when the listing shows the reign-start TITLE CHANGE
+    row and nothing else; an empty, blocked, or unparseable page proves nothing.
+    """
     soup = BeautifulSoup(html, "html.parser")
-    data_rows = [row for row in extract_table_rows(soup) if row and row[0].isdigit()]
+    match_tables = []
+    for table in soup.find_all("table"):
+        rows = [row for row in table.find_all("tr") if row.find_parent("table") is table]
+        for header in rows:
+            labels = [cell.get_text(" ", strip=True).lower().rstrip(".") for cell in header.find_all(["th", "td"], recursive=False)]
+            if len(labels) >= 2 and labels[0] in ("no", "nr", "#") and labels[1] in ("date", "datum"):
+                match_tables.append((rows, header))
+                break
+    if len(match_tables) != 1:
+        return DefenseLookup()
+    rows, header = match_tables[0]
+    data_rows = [
+        [cell.get_text(" ", strip=True) for cell in row.find_all("td", recursive=False)]
+        for row in rows
+        if row is not header and row.find("td", recursive=False)
+    ]
+    if (
+        not data_rows
+        or [row[0] for row in data_rows] != [str(index) for index in range(1, len(data_rows) + 1)]
+        or any(len(row) < 3 or not parse_date(row[1]) or not " ".join(row[2:]).strip() for row in data_rows)
+    ):
+        return DefenseLookup()
+
     defense_rows = [
         row
         for row in data_rows
-        if len(row) >= 2 and not re.search(r"\bTITLE CHANGE\b", " ".join(row[2:]), re.IGNORECASE)
+        if not re.search(r"\bTITLE CHANGE\b", " ".join(row[2:]), re.IGNORECASE)
     ]
     if not defense_rows:
-        return None
+        return DefenseLookup(DEFENSE_NONE) if len(data_rows) == 1 else DefenseLookup()
 
-    return display_date(defense_rows[0][1])
+    defense_date = display_date(defense_rows[0][1])
+    if not defense_date:
+        return DefenseLookup()
+    return DefenseLookup(DEFENSE_KNOWN, defense_date)
 
 
 def extract_active_cagematch_titles(soup: BeautifulSoup) -> list[CagematchTitle]:
@@ -533,6 +576,21 @@ def best_champion_match(wwe: WweChampion, titles: list[CagematchTitle]) -> Cagem
     )
 
 
+def normalize_defense(status: object, date_text: object) -> DefenseLookup:
+    """Reduce a status/date pair to a consistent DefenseLookup.
+
+    Only a parseable date proves "known" and only an explicit "none" with no date
+    proves "none". Everything else, including the legacy "No Title Defenses Yet"
+    text that conflated none with failed lookups, is unavailable.
+    """
+    defense_date = display_date(date_text) if isinstance(date_text, str) else None
+    if status == DEFENSE_NONE:
+        return DefenseLookup(DEFENSE_NONE) if not date_text else DefenseLookup()
+    if status in (DEFENSE_KNOWN, None) and defense_date:
+        return DefenseLookup(DEFENSE_KNOWN, defense_date)
+    return DefenseLookup()
+
+
 def combine_records(wwe_champions: list[WweChampion], cagematch_titles: list[CagematchTitle]) -> list[dict]:
     records: list[dict] = []
     today = date.today()
@@ -540,8 +598,10 @@ def combine_records(wwe_champions: list[WweChampion], cagematch_titles: list[Cag
     for champion in wwe_champions:
         matched = match_cagematch(champion, cagematch_titles)
         championship_date = matched.championship_date if matched else None
-        last_defense_date = matched.last_defense_date if matched and matched.last_defense_date else NO_DEFENSE
-        defense_date = parse_date(last_defense_date)
+        defense = (
+            normalize_defense(matched.defense_status, matched.last_defense_date) if matched else DefenseLookup()
+        )
+        defense_date = parse_date(defense.date)
         reign_start = parse_date(championship_date)
 
         records.append(
@@ -551,7 +611,8 @@ def combine_records(wwe_champions: list[WweChampion], cagematch_titles: list[Cag
                 "imageUrl": champion.image_url,
                 "championshipDate": championship_date,
                 "daysAsChampion": matched.days_as_champion if matched and matched.days_as_champion is not None else days_between(reign_start, today),
-                "lastDefenseDate": last_defense_date,
+                "defenseStatus": defense.status,
+                "lastDefenseDate": defense.date,
                 "daysSinceLastDefense": days_between(defense_date, today) if defense_date else None,
                 "source": {
                     "wweUrl": champion.wwe_url,
@@ -620,16 +681,16 @@ def existing_cache_as_cagematch_titles(path: Path) -> list[CagematchTitle]:
         source = item.get("source") if isinstance(item, dict) else {}
         if not isinstance(source, dict) or not source.get("cagematchUrl"):
             continue
+        defense = normalize_defense(item.get("defenseStatus"), item.get("lastDefenseDate"))
         titles.append(
             CagematchTitle(
                 title_name=title_to_championship(str(item.get("titleName") or "")),
                 champion_name=str(item.get("championName") or ""),
                 championship_date=item.get("championshipDate"),
                 days_as_champion=item.get("daysAsChampion"),
-                last_defense_date=None
-                if item.get("lastDefenseDate") == NO_DEFENSE
-                else item.get("lastDefenseDate"),
+                last_defense_date=defense.date,
                 cagematch_url=str(source.get("cagematchUrl") or ""),
+                defense_status=defense.status,
             )
         )
     return titles

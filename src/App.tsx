@@ -2,20 +2,9 @@ import { AlertCircle, CalendarDays, Trophy } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { statusMessage, type FreshnessState } from './statusMessage';
 import { SnapshotNote } from './SnapshotNote';
+import type { Champion } from './champion';
+import { ChampionSources, DefenseFacts } from './DefenseFacts';
 
-type Champion = {
-  titleName: string;
-  championName: string;
-  imageUrl: string;
-  championshipDate: string | null;
-  daysAsChampion: number | null;
-  lastDefenseDate: string | null;
-  daysSinceLastDefense: number | null;
-  source?: {
-    wweUrl?: string;
-    cagematchUrl?: string;
-  };
-};
 
 type CacheMetadata = {
   generatedAt: string;
@@ -27,8 +16,6 @@ type LoadState =
   | { status: 'empty' }
   | { status: 'error'; message: string };
 
-
-const NO_DEFENSE = 'No Title Defenses Yet';
 
 function isChampion(value: unknown): value is Champion {
   if (!value || typeof value !== 'object') return false;
@@ -81,10 +68,6 @@ function StatRow({ label, value }: { label: string; value: string | number | nul
 }
 
 function ChampionCard({ champion }: { champion: Champion }) {
-  const lastDefense = champion.lastDefenseDate || NO_DEFENSE;
-  const daysSinceDefense =
-    lastDefense === NO_DEFENSE ? NO_DEFENSE : formatValue(champion.daysSinceLastDefense);
-
   return (
     <article className="group overflow-hidden rounded-lg border border-white/10 bg-ink-850 shadow-card transition duration-200 hover:-translate-y-0.5 hover:border-white/20">
       <ChampionImage champion={champion} />
@@ -96,13 +79,13 @@ function ChampionCard({ champion }: { champion: Champion }) {
           <p className="text-balance text-2xl font-semibold leading-tight text-white">
             {champion.championName}
           </p>
+          <ChampionSources champion={champion} />
         </div>
 
         <dl>
           <StatRow label="Championship Date" value={champion.championshipDate} />
           <StatRow label="Days as Champion" value={champion.daysAsChampion} />
-          <StatRow label="Last Defense Date" value={lastDefense} />
-          <StatRow label="Days Since Last Defense" value={daysSinceDefense} />
+          <DefenseFacts champion={champion} />
         </dl>
       </div>
     </article>
