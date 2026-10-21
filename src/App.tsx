@@ -254,7 +254,7 @@ export function App() {
                 WWE Champions
               </h1>
               <p className="mt-2 text-sm text-zinc-400 sm:text-base">{subtitle}</p>
-              <p className="mt-1 text-xs text-zinc-400">Weekly snapshot. Day counts are as of the snapshot date, not live.</p>
+              <p className="mt-1 text-xs text-zinc-400">Weekly snapshot. Some day counts may be from an earlier snapshot.</p>
             </div>
           </div>
           <button
@@ -287,7 +287,9 @@ export function App() {
           <StatusPanel state={state} />
         )}
         <footer>
-          <SnapshotNote updatedAt={freshness.status === 'known' ? freshness.updatedAt : null} />
+          {freshness.status !== 'pending' && (
+            <SnapshotNote updatedAt={freshness.status === 'known' ? freshness.updatedAt : null} />
+          )}
         </footer>
       </div>
     </main>
