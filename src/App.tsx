@@ -107,6 +107,10 @@ export function App() {
         hasLoadedChampions.current = true;
         const result: LoadState = data.length > 0 ? { status: 'ready', champions: data } : { status: 'empty' };
         setState(result);
+        if (result.status === 'empty') {
+          setFreshness({ status: 'unavailable' });
+          setAnnouncement(statusMessage(result, { status: 'unavailable' }));
+        }
         return result;
       } catch {
         if (requestId !== currentRequest.current) return null;
@@ -192,7 +196,7 @@ export function App() {
                 WWE Champions
               </h1>
               <p className="mt-1 text-sm text-zinc-400">{subtitle}</p>
-              <p className="mt-1 text-xs text-zinc-400">Weekly snapshot. Day counts are as of the snapshot date, not live.</p>
+              <p className="mt-1 text-xs text-zinc-400">Weekly snapshot. Cached counts may include older retained values.</p>
             </div>
           </div>
           <button

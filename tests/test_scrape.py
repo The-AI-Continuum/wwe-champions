@@ -79,6 +79,14 @@ class ParseLastDefenseFromMatchesTests(unittest.TestCase):
             with self.subTest(rows=rows):
                 self.assertEqual(parse_defense_from_matches(f"<table>{rows}</table>").status, DEFENSE_UNAVAILABLE)
 
+    def test_missing_ordinals_or_incomplete_numbering_never_confirm_none(self):
+        for rows in [
+            "<tr><td></td><td>11.10.2026</td><td>Title defense</td></tr><tr><td>2</td><td>10.10.2026</td><td>TITLE CHANGE</td></tr>",
+            "<tr><td>2</td><td>10.10.2026</td><td>TITLE CHANGE</td></tr>",
+        ]:
+            with self.subTest(rows=rows):
+                self.assertEqual(parse_defense_from_matches(f"<table>{rows}</table>").status, DEFENSE_UNAVAILABLE)
+
 
 def wwe(title: str = "Intercontinental Champion", champion: str = "Penta") -> WweChampion:
     return WweChampion(champion, title, "https://www.wwe.com/superstars/penta", "")

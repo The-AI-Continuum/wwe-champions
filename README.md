@@ -11,7 +11,7 @@ A single-repository dashboard for current WWE champions. The frontend reads a lo
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 24+ (also used in CI; Node's native TypeScript support runs the status regression tests)
 - Python 3.11+
 - Chromium installed through Playwright
 
@@ -38,7 +38,7 @@ python scrape.py
 
 The scraper writes the champion array to `public/champions.json` and the completed refresh time to `public/metadata.json`. The dashboard displays that generated time when available; if the metadata cannot be read, it marks the update time unavailable while keeping valid champion records visible.
 
-Day counts are cached as of that generated date, not recalculated live. The page displays dates in UTC and explains the weekly refresh cadence. WWE.com and Cagematch provide the source information; a completed refresh does not guarantee complete verification of every upstream field. Social previews describe the same weekly snapshot, not a live tracker.
+Day counts are cached at refresh, not recalculated live. Retained source values may predate the generated snapshot, so the generation time is not a promise that every count was freshly obtained. The page displays dates in UTC and explains the weekly refresh cadence. WWE.com and Cagematch provide the source information; a completed refresh does not guarantee complete verification of every upstream field. Social previews describe the same weekly snapshot, not a live tracker.
 
 If Cagematch is unavailable or blocks a request, the script still preserves WWE.com champion records with display-safe fallback values.
 
@@ -89,3 +89,15 @@ npm run build
 - The scraper matches exact normalized titles first, then falls back to fuzzy title and champion similarity.
 - `defenseStatus` distinguishes `known` (a defense date), `none` (a trustworthy current-reign listing containing only its dated title-change match), and `unavailable` (failed, unmatched, or incomplete history). Unknown history never means confirmed no defenses.
 - Legacy `No Title Defenses Yet` markers are ambiguous and display as **Defense history unavailable**. A known defense today preserves numeric zero; absence is stated once rather than repeated as a date and duration. Available WWE/Cagematch sources are descriptive, keyboard-accessible links on each card.
+
+## Verification
+
+```bash
+npm test
+npm run build
+python -m unittest discover -s tests -p 'test_*.py'
+```
+
+The Node tests cover the OCR evidence validator and snapshot announcement outcomes. Python fixtures cover defense parsing, incomplete/unmatched history, numeric zero, and cache compatibility. UI acceptance additionally requires exercising the running dashboard: search/group/reset and keyboard recovery, independent metadata failure/timeout, same-count retry and stale responses, source links, image fallbacks, reduced motion, and readable reflow.
+
+Compact cards share metric tracks across neighboring entries, retain complete date text, and use subdued 8% white dividers. The layout was checked at 320, 390, 640, 768, 1024, 1280, and 1536 CSS pixels. Browser semantics and automated accessibility scans do not replace a real screen-reader session or native browser zoom verification.
