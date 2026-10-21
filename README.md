@@ -38,7 +38,7 @@ python scrape.py
 
 The scraper writes the champion array to `public/champions.json` and the completed refresh time to `public/metadata.json`. The dashboard displays that generated time when available; if the metadata cannot be read, it marks the update time unavailable while keeping valid champion records visible.
 
-Day counts are cached as of that generated date, not recalculated live. The page displays dates in UTC and explains the weekly refresh cadence. WWE.com and Cagematch provide the source information; a completed refresh does not guarantee complete verification of every upstream field. Social previews describe the same weekly snapshot, not a live tracker.
+Day counts are cached at refresh, not recalculated live. Retained source values may predate the generated snapshot, so the generation time is not a promise that every count was freshly obtained. The page displays dates in UTC and explains the weekly refresh cadence. WWE.com and Cagematch provide the source information; a completed refresh does not guarantee complete verification of every upstream field. Social previews describe the same weekly snapshot, not a live tracker.
 
 If Cagematch is unavailable or blocks a request, the script still preserves WWE.com champion records with display-safe fallback values.
 
@@ -87,3 +87,6 @@ npm run build
 - The scraper matches exact normalized titles first, then falls back to fuzzy title and champion similarity.
 - `defenseStatus` distinguishes `known` (a defense date), `none` (a trustworthy current-reign listing containing only its dated title-change match), and `unavailable` (failed, unmatched, or incomplete history). Unknown history never means confirmed no defenses.
 - Legacy `No Title Defenses Yet` markers are ambiguous and display as **Defense history unavailable**. A known defense today preserves numeric zero; absence is stated once rather than repeated as a date and duration. Available WWE/Cagematch sources are descriptive, keyboard-accessible links on each card.
+- Defense parsing selects the current-reign match table by its number/date headers and ignores unrelated page tables. Missing or non-contiguous row numbers, unreadable dates, and incomplete rows remain unavailable rather than proving no defenses. Regression fixtures include a recorded public Cagematch match table.
+
+Run the defense/cache regressions with `python -m unittest discover -s tests -p 'test_*.py'`. The fixtures cover known defense dates, numeric zero, confirmed none, unavailable or unmatched history, incomplete listings, and conservative legacy-cache handling without requiring a live scrape.
