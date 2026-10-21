@@ -6,13 +6,13 @@ This inventory records credential names and consumers only. Secret values belong
 
 | Name | Consumer | Delivery target | Status |
 |---|---|---|---|
-| `OPENROUTER_CODE_REVIEW_KEY` | `.github/workflows/ci.yml` — mandatory OCR review | Repository Actions secret | Present in Phase Operations / Production / `/openrouter` and in the Actions secret list per owner screenshot; successful review unverified |
-| `OPENROUTER_PR_APPROVER_KEY` | `.github/workflows/independent-review.yml` — external PR-Agent review | Repository Actions secret | Present in Phase Operations / Production / `/openrouter` and in the Actions secret list per owner screenshot; successful review unverified |
+| `OPENROUTER_CODE_REVIEW_KEY` | `.github/workflows/ci.yml` — mandatory OCR review | Repository Actions secret | Present in Phase Operations / Production / `/openrouter` and repository Actions; OCR review passed on PR #16 |
+| `OPENROUTER_PR_APPROVER_KEY` | `.github/workflows/independent-review.yml` — external PR-Agent review | Repository Actions secret | Present in Phase Operations / Production / `/openrouter` and repository Actions; external review passed on PR #16 |
 | `CODE_REVIEW_AND_PR_BOT_APP_PRIVATE_KEY_B64` | `.github/workflows/pr-verdict.yml` — binding approval | `binding-approval` environment secret | Present in the `binding-approval` secret list per owner screenshot; value validity and environment restriction unverified |
 | `CODE_REVIEW_AND_PR_BOT_REVIEW_APP_ID` | `.github/workflows/pr-verdict.yml` — binding approval App identity | `binding-approval` environment secret | Present in the `binding-approval` secret list per owner screenshot; App installation unverified |
-| `LINEAR_CI_READ_KEY` | `.github/workflows/work-item-link.yml` — Linear work-item validation | Repository Actions secret | Present in Phase Operations / Production / `/linear`; absent from the repository Actions secret list, so sync is still required |
+| `LINEAR_CI_READ_KEY` | `.github/workflows/work-item-link.yml` — Linear work-item validation | Repository Actions secret | Synced to repository Actions on 2026-10-21; `work-item-link` passed on PR #16 |
 
-Phase is the intended source of Actions secret values. The OpenRouter review keys are present at `/openrouter` and in the repository secret list per the owner screenshot; the binding-approval App secret sync state remains unverified. `LINEAR_CI_READ_KEY` is present at `/linear` but is not yet synced to repository Actions. Keep the App ID as an Actions secret; do not duplicate it as a repository variable. The `binding-approval` environment must be restricted to the default branch so pull-request workflows cannot access the reviewer private key.
+Phase is the intended source of Actions secret values. The OpenRouter review keys are present in Phase and repository Actions, and both review checks passed on PR #16. The `binding-approval` App secrets are present per the owner screenshot, but their value validity, App installation, and environment restriction remain unverified. `LINEAR_CI_READ_KEY` is synced to repository Actions and validation passed on PR #16. Keep the App ID as an Actions secret; do not duplicate it as a repository variable. Restrict the `binding-approval` environment to the default branch so pull-request workflows cannot access the reviewer private key.
 
 ## Local OMP authoring bot
 
