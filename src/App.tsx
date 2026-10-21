@@ -255,6 +255,10 @@ export function App() {
             <div className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm font-medium text-zinc-400">
               <CalendarDays className="h-3.5 w-3.5 text-gold-300" aria-hidden="true" />
               {formatLastUpdated(freshness)}
+
+        <div role="status" aria-label="Freshness status" className="sr-only">
+          {formatLastUpdated(freshness)}
+        </div>
             </div>
             <div>
               <h1 className="text-3xl font-semibold tracking-normal text-white sm:text-4xl">
@@ -270,7 +274,7 @@ export function App() {
               if (!isLoading && !retrying) void loadSnapshot(true);
             }}
             aria-disabled={isLoading || retrying}
-            aria-live="polite"
+            
             className="rounded-md border border-white/20 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300 aria-disabled:cursor-wait aria-disabled:opacity-60"
           >
             {retrying ? 'Reloading snapshot…' : isLoading ? 'Loading snapshot…' : 'Reload snapshot'}
