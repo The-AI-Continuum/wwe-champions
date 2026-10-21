@@ -1,5 +1,5 @@
 import { AlertCircle, CalendarDays, Trophy } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type Champion = {
   titleName: string;
@@ -21,9 +21,11 @@ type CacheMetadata = {
 
 type LoadState =
   | { status: 'loading' }
-  | { status: 'ready'; champions: Champion[]; updatedAt: string }
+  | { status: 'ready'; champions: Champion[] }
   | { status: 'empty' }
   | { status: 'error'; message: string };
+
+type FreshnessState = { status: 'pending' | 'unavailable' } | { status: 'known'; updatedAt: string };
 
 const NO_DEFENSE = 'No Title Defenses Yet';
 
@@ -42,17 +44,6 @@ function isCacheMetadata(value: unknown): value is CacheMetadata {
 function formatValue(value: string | number | null | undefined, fallback = 'Unavailable') {
   if (value === null || value === undefined || value === '') return fallback;
   return value;
-}
-
-function formatLastUpdated(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Last updated unavailable';
-
-  return `Last updated ${date.toLocaleDateString(undefined, {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  })}`;
 }
 
 function ChampionImage({ champion }: { champion: Champion }) {
@@ -121,15 +112,15 @@ function StatusPanel({ state }: { state: Exclude<LoadState, { status: 'ready' }>
   const copy = {
     loading: {
       title: 'Loading champions',
-      message: 'Reading the local champions cache.',
+      message: 'Loading the latest available champion snapshot.',
     },
     empty: {
       title: 'No champions found',
-      message: 'Run the scraper to populate public/champions.json.',
+      message: 'The available snapshot contains no champion records.',
     },
     error: {
       title: 'Could not load champions',
-      message: state.status === 'error' ? state.message : 'The cache could not be read.',
+      message: state.status === 'error' ? state.message : 'The champion snapshot could not be loaded.',
     },
   }[state.status];
 
@@ -144,65 +135,117 @@ function StatusPanel({ state }: { state: Exclude<LoadState, { status: 'ready' }>
   );
 }
 
+function formatLastUpdated(state: FreshnessState) {
+  if (state.status !== 'known') {
+    return state.status === 'pending' ? 'Checking update time' : 'Update time unavailable';
+  }
+
+  const date = new Date(state.updatedAt);
+  if (Number.isNaN(date.getTime())) return 'Update time unavailable';
+  return `Last updated ${date.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })}`;
+}
+
 export function App() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const [freshness, setFreshness] = useState<FreshnessState>({ status: 'pending' });
+  const [isLoading, setIsLoading] = useState(true);
+  const [retrying, setRetrying] = useState(false);
+  const [championError, setChampionError] = useState<string | null>(null);
+  const currentRequest = useRef(0);
+  const hasLoadedChampions = useRef(false);
+
+  const loadSnapshot = useCallback(async (isRetry = false) => {
+    const requestId = ++currentRequest.current;
+    const metadataController = new AbortController();
+
+    setIsLoading(true);
+    setRetrying(isRetry);
+    setChampionError(null);
+    setFreshness({ status: 'pending' });
+    if (!hasLoadedChampions.current) setState({ status: 'loading' });
+
+    const loadChampions = async () => {
+      try {
+        const response = await fetch('/champions.json', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`Champion snapshot request failed with HTTP ${response.status}.`);
+
+        const data: unknown = await response.json();
+        if (!Array.isArray(data) || !data.every(isChampion)) {
+          throw new Error('The champion snapshot is not a valid champion list.');
+        }
+
+        if (requestId !== currentRequest.current) return false;
+        hasLoadedChampions.current = true;
+        setState(data.length > 0 ? { status: 'ready', champions: data } : { status: 'empty' });
+        return true;
+      } catch {
+        if (requestId !== currentRequest.current) return false;
+        const message = 'Champion data could not be loaded. Use Reload snapshot to try again.';
+        setChampionError(message);
+        setFreshness({ status: 'unavailable' });
+        setState((previous) =>
+          previous.status === 'ready' || previous.status === 'empty'
+            ? previous
+            : { status: 'error', message },
+        );
+        return false;
+      } finally {
+        if (requestId === currentRequest.current) setIsLoading(false);
+      }
+    };
+
+    const loadMetadata = async (): Promise<string | null> => {
+      let metadataTimeout: number | undefined;
+      try {
+        const metadata = await Promise.race([
+          (async () => {
+            const response = await fetch('/metadata.json', {
+              cache: 'no-store',
+              signal: metadataController.signal,
+            });
+            if (!response.ok) throw new Error('Metadata request failed.');
+            return response.json() as Promise<unknown>;
+          })(),
+          new Promise<never>((_, reject) => {
+            metadataTimeout = window.setTimeout(() => {
+              metadataController.abort();
+              reject(new Error('Metadata request timed out.'));
+            }, 10_000);
+          }),
+        ]);
+        return isCacheMetadata(metadata) ? metadata.generatedAt : null;
+      } catch {
+        return null;
+      } finally {
+        if (metadataTimeout !== undefined) window.clearTimeout(metadataTimeout);
+      }
+    };
+
+    const [championsLoaded, updatedAt] = await Promise.all([loadChampions(), loadMetadata()]);
+    if (requestId === currentRequest.current) {
+      setFreshness(championsLoaded && updatedAt
+        ? { status: 'known', updatedAt }
+        : { status: 'unavailable' });
+      setRetrying(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadChampions() {
-      try {
-        const [response, metadataResponse] = await Promise.all([
-          fetch('/champions.json', { cache: 'no-store' }),
-          fetch('/metadata.json', { cache: 'no-store' }),
-        ]);
-        if (!response.ok) {
-          throw new Error(`Cache request failed with HTTP ${response.status}.`);
-        }
-        if (!metadataResponse.ok) {
-          throw new Error(`Refresh metadata request failed with HTTP ${metadataResponse.status}.`);
-        }
-
-        const [data, metadata]: [unknown, unknown] = await Promise.all([
-          response.json(),
-          metadataResponse.json(),
-        ]);
-        if (!Array.isArray(data) || !data.every(isChampion)) {
-          throw new Error('public/champions.json is not a valid champion array.');
-        }
-        if (!isCacheMetadata(metadata)) {
-          throw new Error('public/metadata.json does not contain a valid generatedAt timestamp.');
-        }
-
-        if (!cancelled) {
-          setState(
-            data.length > 0
-              ? { status: 'ready', champions: data, updatedAt: metadata.generatedAt }
-              : { status: 'empty' },
-          );
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setState({
-            status: 'error',
-            message: error instanceof Error ? error.message : 'Unexpected cache parsing error.',
-          });
-        }
-      }
-    }
-
-    loadChampions();
+    void loadSnapshot(false);
     return () => {
-      cancelled = true;
+      currentRequest.current += 1;
     };
-  }, []);
+  }, [loadSnapshot]);
 
   const championCount = state.status === 'ready' ? state.champions.length : 0;
   const subtitle = useMemo(() => {
     if (state.status !== 'ready') return 'Local cache driven champion intelligence';
     return `${championCount} active championship ${championCount === 1 ? 'record' : 'records'}`;
   }, [championCount, state.status]);
-  const lastUpdated = state.status === 'ready' ? formatLastUpdated(state.updatedAt) : 'Last updated loading';
 
   return (
     <main className="min-h-screen bg-ink-950 text-white">
@@ -211,7 +254,7 @@ export function App() {
           <div className="space-y-3">
             <div className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm font-medium text-zinc-400">
               <CalendarDays className="h-3.5 w-3.5 text-gold-300" aria-hidden="true" />
-              {lastUpdated}
+              {formatLastUpdated(freshness)}
             </div>
             <div>
               <h1 className="text-3xl font-semibold tracking-normal text-white sm:text-4xl">
@@ -220,7 +263,23 @@ export function App() {
               <p className="mt-2 text-sm text-zinc-400 sm:text-base">{subtitle}</p>
             </div>
           </div>
+          <button
+            type="button"
+            aria-label="Reload champion snapshot"
+            onClick={() => {
+              if (!isLoading && !retrying) void loadSnapshot(true);
+            }}
+            aria-disabled={isLoading || retrying}
+            aria-live="polite"
+            className="rounded-md border border-white/20 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300 aria-disabled:cursor-wait aria-disabled:opacity-60"
+          >
+            {retrying ? 'Reloading snapshot…' : isLoading ? 'Loading snapshot…' : 'Reload snapshot'}
+          </button>
         </header>
+
+        {championError && state.status !== 'error' && (
+          <p role="alert" className="text-sm text-amber-200">{championError}</p>
+        )}
 
         {state.status === 'ready' ? (
           <section
