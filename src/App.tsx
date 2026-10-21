@@ -1,6 +1,7 @@
 import { AlertCircle, CalendarDays, Trophy } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { statusMessage, type FreshnessState } from './statusMessage';
+import { SnapshotNote } from './SnapshotNote';
 
 type Champion = {
   titleName: string;
@@ -146,6 +147,7 @@ function formatLastUpdated(state: FreshnessState) {
     month: 'long',
     day: 'numeric',
     year: 'numeric',
+    timeZone: 'UTC',
   })}`;
 }
 
@@ -251,8 +253,8 @@ export function App() {
 
   const championCount = state.status === 'ready' ? state.champions.length : 0;
   const subtitle = useMemo(() => {
-    if (state.status !== 'ready') return 'Local cache driven champion intelligence';
-    return `${championCount} active championship ${championCount === 1 ? 'record' : 'records'}`;
+    if (state.status !== 'ready') return 'Weekly championship snapshots';
+    return `${championCount} championship ${championCount === 1 ? 'record' : 'records'} in this snapshot`;
   }, [championCount, state.status]);
 
   return (
@@ -269,6 +271,7 @@ export function App() {
                 WWE Champions
               </h1>
               <p className="mt-2 text-sm text-zinc-400 sm:text-base">{subtitle}</p>
+              <p className="mt-1 text-xs text-zinc-400">Weekly snapshot. Some day counts may be from an earlier snapshot.</p>
             </div>
           </div>
           <button
@@ -300,6 +303,11 @@ export function App() {
         ) : (
           <StatusPanel state={state} />
         )}
+        <footer>
+          {freshness.status !== 'pending' && (
+            <SnapshotNote updatedAt={freshness.status === 'known' ? freshness.updatedAt : null} />
+          )}
+        </footer>
       </div>
     </main>
   );
