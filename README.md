@@ -56,6 +56,8 @@ Entries use bounded side portraits and compact facts on mobile, retaining full t
 
 Metric values use brighter semibold text to take visual priority over supporting labels, while full dates remain visible without hover disclosure. Neighboring cards share identity and fact-row heights through nested CSS subgrids, including unavailable and confirmed-no-defense states. The facts retain a semantic definition list.
 
+Statistic dividers use the supported `border-white/[0.08]` utility for subtle 8% white rules, consistent across all facts. Verify computed border colors in the built page when changing this styling; unsupported opacity suffixes can silently fall back to an opaque border.
+
 ## Build
 
 ```bash
