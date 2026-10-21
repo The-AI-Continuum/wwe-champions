@@ -36,7 +36,7 @@ source .venv/bin/activate
 python scrape.py
 ```
 
-The scraper writes the champion array to `public/champions.json` and the completed refresh time to `public/metadata.json`. The dashboard displays that generated time instead of the static file's deployment timestamp.
+The scraper writes the champion array to `public/champions.json` and the completed refresh time to `public/metadata.json`. The dashboard displays that generated time when available; if the metadata cannot be read, it marks the update time unavailable while keeping valid champion records visible.
 
 If Cagematch is unavailable or blocks a request, the script still preserves WWE.com champion records with display-safe fallback values.
 
