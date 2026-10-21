@@ -32,11 +32,16 @@ function ChampionImage({ champion }: { champion: Champion }) {
   );
 }
 
+function formatDays(days: number | null | undefined) {
+  if (days === null || days === undefined) return null;
+  return `${days.toLocaleString()} ${days === 1 ? 'day' : 'days'}`;
+}
+
 function Metric({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div className="grid min-w-0 content-start border-t border-white/8 py-2">
-      <dt className="text-xs font-semibold text-zinc-200">{label}</dt>
-      <dd className="break-words text-sm text-zinc-400">{formatValue(value)}</dd>
+      <dt className="text-xs text-zinc-400">{label}</dt>
+      <dd className="break-words text-sm font-semibold tabular-nums text-zinc-100">{formatValue(value)}</dd>
     </div>
   );
 }
@@ -55,7 +60,7 @@ export function ChampionCard({ champion }: { champion: Champion }) {
 
       <dl className="mt-auto grid grid-cols-2 gap-x-4">
         <Metric label="Champion since" value={champion.championshipDate} />
-        <Metric label="Reign length" value={champion.daysAsChampion} />
+        <Metric label="Reign length" value={formatDays(champion.daysAsChampion)} />
         <DefenseFacts champion={champion} />
       </dl>
     </article>
