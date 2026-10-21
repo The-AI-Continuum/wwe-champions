@@ -38,6 +38,8 @@ python scrape.py
 
 The scraper writes the champion array to `public/champions.json` and the completed refresh time to `public/metadata.json`. The dashboard displays that generated time when available; if the metadata cannot be read, it marks the update time unavailable while keeping valid champion records visible.
 
+Day counts are cached as of that generated date, not recalculated live. The page displays dates in UTC and explains the weekly refresh cadence. WWE.com and Cagematch provide the source information; a completed refresh does not guarantee complete verification of every upstream field. Social previews describe the same weekly snapshot, not a live tracker.
+
 If Cagematch is unavailable or blocks a request, the script still preserves WWE.com champion records with display-safe fallback values.
 
 ## Run the Dashboard
