@@ -30,6 +30,13 @@ class ParseLastDefenseFromMatchesTests(unittest.TestCase):
 
         self.assertEqual(parse_defense_from_matches(html), DefenseLookup(DEFENSE_KNOWN, "September 11, 2026"))
 
+    def test_recorded_upstream_match_table_preserves_latest_defense(self):
+        path = Path(__file__).parent / "fixtures" / "cagematch-sami-reign155.html"
+        self.assertEqual(
+            parse_defense_from_matches(path.read_text(encoding="utf-8")),
+            DefenseLookup(DEFENSE_KNOWN, "September 18, 2026"),
+        )
+
     def test_does_not_count_the_current_reign_title_change_as_a_defense(self):
         html = """
         <table>
@@ -51,6 +58,22 @@ class ParseLastDefenseFromMatchesTests(unittest.TestCase):
 
         self.assertEqual(parse_defense_from_matches(html), DefenseLookup(DEFENSE_KNOWN, "September 18, 2026"))
 
+    def test_unrelated_tables_do_not_hide_the_current_reign_match_table(self):
+        for description, expected in [
+            ("Title: A (c) defeats B", DefenseLookup(DEFENSE_KNOWN, "September 18, 2026")),
+            ("Title: A defeats B (c) - TITLE CHANGE", DefenseLookup(DEFENSE_NONE)),
+        ]:
+            html = f"""
+            <table><tr><td>Sidebar</td><td>Navigation</td></tr></table>
+            <table>
+              <tr><td>No.</td><td>Date</td><td>Match</td></tr>
+              <tr><td>1</td><td>18.09.2026</td><td>{description}</td></tr>
+            </table>
+            <table><tr><td>1</td><td>Pagination</td></tr></table>
+            """
+            with self.subTest(expected=expected):
+                self.assertEqual(parse_defense_from_matches(html), expected)
+
     def test_empty_or_blocked_listing_is_unavailable_not_none(self):
         for html in [
             "",
@@ -63,6 +86,7 @@ class ParseLastDefenseFromMatchesTests(unittest.TestCase):
     def test_defense_with_unparseable_date_is_unavailable(self):
         html = """
         <table>
+          <tr><th>No.</th><th>Date</th><th>Match</th></tr>
           <tr><td>1</td><td>soon</td><td></td><td>Title: A (c) defeats B</td></tr>
           <tr><td>2</td><td>11.09.2026</td><td></td><td>Title: A defeats C (c) - TITLE CHANGE !!!</td></tr>
         </table>
@@ -77,7 +101,8 @@ class ParseLastDefenseFromMatchesTests(unittest.TestCase):
             "<tr><td>1</td><td>10.10.2026</td><td>TITLE CHANGE</td></tr><tr><td>2</td></tr>",
         ]:
             with self.subTest(rows=rows):
-                self.assertEqual(parse_defense_from_matches(f"<table>{rows}</table>").status, DEFENSE_UNAVAILABLE)
+                html = f"<table><tr><th>No.</th><th>Date</th><th>Match</th></tr>{rows}</table>"
+                self.assertEqual(parse_defense_from_matches(html).status, DEFENSE_UNAVAILABLE)
 
     def test_missing_ordinals_or_incomplete_numbering_never_confirm_none(self):
         for rows in [
@@ -85,7 +110,8 @@ class ParseLastDefenseFromMatchesTests(unittest.TestCase):
             "<tr><td>2</td><td>10.10.2026</td><td>TITLE CHANGE</td></tr>",
         ]:
             with self.subTest(rows=rows):
-                self.assertEqual(parse_defense_from_matches(f"<table>{rows}</table>").status, DEFENSE_UNAVAILABLE)
+                html = f"<table><tr><th>No.</th><th>Date</th><th>Match</th></tr>{rows}</table>"
+                self.assertEqual(parse_defense_from_matches(html).status, DEFENSE_UNAVAILABLE)
 
 
 def wwe(title: str = "Intercontinental Champion", champion: str = "Penta") -> WweChampion:

@@ -58,7 +58,7 @@ export function ChampionCard({ champion }: { champion: Champion }) {
         </div>
       </div>
 
-      <dl className="contents">
+      <dl className="col-span-2 row-span-2 grid grid-cols-subgrid grid-rows-subgrid gap-y-0">
         <Metric label="Champion since" value={champion.championshipDate} />
         <Metric label="Reign length" value={formatDays(champion.daysAsChampion)} />
         <DefenseFacts champion={champion} />

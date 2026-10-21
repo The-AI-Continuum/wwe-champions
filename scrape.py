@@ -361,10 +361,21 @@ def parse_defense_from_matches(html: str) -> DefenseLookup:
     row and nothing else; an empty, blocked, or unparseable page proves nothing.
     """
     soup = BeautifulSoup(html, "html.parser")
+    match_tables = []
+    for table in soup.find_all("table"):
+        rows = [row for row in table.find_all("tr") if row.find_parent("table") is table]
+        for header in rows:
+            labels = [cell.get_text(" ", strip=True).lower().rstrip(".") for cell in header.find_all(["th", "td"], recursive=False)]
+            if len(labels) >= 2 and labels[0] in ("no", "nr", "#") and labels[1] in ("date", "datum"):
+                match_tables.append((rows, header))
+                break
+    if len(match_tables) != 1:
+        return DefenseLookup()
+    rows, header = match_tables[0]
     data_rows = [
         [cell.get_text(" ", strip=True) for cell in row.find_all("td", recursive=False)]
-        for row in soup.find_all("tr")
-        if row.find("td", recursive=False)
+        for row in rows
+        if row is not header and row.find("td", recursive=False)
     ]
     if (
         not data_rows
