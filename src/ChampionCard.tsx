@@ -39,7 +39,7 @@ function formatDays(days: number | null | undefined) {
 
 function Metric({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
-    <div className="grid min-w-0 content-start border-t border-white/8 py-2">
+    <div className="grid min-w-0 content-start border-t border-white/[0.08] py-2">
       <dt className="text-xs text-zinc-400">{label}</dt>
       <dd className="break-words text-sm font-semibold tabular-nums text-zinc-100">{formatValue(value)}</dd>
     </div>
