@@ -1,0 +1,70 @@
+import { Trophy } from 'lucide-react';
+import { useState } from 'react';
+import type { Champion } from './champion';
+import { ChampionSources, DefenseFacts } from './DefenseFacts';
+
+function formatValue(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === '') return 'Unavailable';
+  return value;
+}
+
+function ChampionImage({ champion }: { champion: Champion }) {
+  const [failed, setFailed] = useState(!champion.imageUrl);
+
+  if (failed) {
+    return (
+      <div className="flex h-20 w-16 shrink-0 items-center justify-center rounded-md bg-[radial-gradient(circle_at_50%_18%,rgba(216,167,47,0.28),transparent_34%),linear-gradient(145deg,#202024,#111113)] sm:h-24 sm:w-20">
+        <Trophy className="h-7 w-7 text-gold-300/80" aria-hidden="true" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={champion.imageUrl}
+      alt={`${champion.championName} official WWE profile headshot`}
+      width={80}
+      height={96}
+      className="h-20 w-16 shrink-0 rounded-md object-cover object-top sm:h-24 sm:w-20"
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function formatDays(days: number | null | undefined) {
+  if (days === null || days === undefined) return null;
+  return `${days.toLocaleString()} ${days === 1 ? 'day' : 'days'}`;
+}
+
+function Metric({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return (
+    <div className="grid min-w-0 content-start border-t border-white/8 py-2">
+      <dt className="text-xs font-semibold text-zinc-200">{label}</dt>
+      <dd className="break-words text-sm text-zinc-400">{formatValue(value)}</dd>
+    </div>
+  );
+}
+
+export function ChampionCard({ champion }: { champion: Champion }) {
+  return (
+    <article className="group flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-ink-850 px-3 pb-2 pt-3 shadow-card transition duration-200 hover:-translate-y-0.5 hover:border-white/20">
+      <div className="flex min-w-0 gap-3 pb-3">
+        <ChampionImage key={champion.imageUrl} champion={champion} />
+        <div className="min-w-0 flex-1 space-y-1">
+          <h2 className="break-words text-pretty text-xs font-semibold leading-4 text-zinc-300">{champion.titleName}</h2>
+          <p className="break-words text-balance text-lg font-semibold leading-6 text-white">{champion.championName}</p>
+          <ChampionSources champion={champion} />
+        </div>
+      </div>
+
+      <dl className="mt-auto grid grid-cols-2 gap-x-4">
+        <Metric label="Champion since" value={champion.championshipDate} />
+        <Metric label="Reign length" value={formatDays(champion.daysAsChampion)} />
+        <DefenseFacts champion={champion} />
+      </dl>
+    </article>
+  );
+}
+
+export default ChampionCard;

@@ -1,9 +1,9 @@
-import { AlertCircle, CalendarDays, Trophy } from 'lucide-react';
+import { AlertCircle, CalendarDays } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { statusMessage, type FreshnessState } from './statusMessage';
 import { SnapshotNote } from './SnapshotNote';
 import type { Champion } from './champion';
-import { ChampionSources, DefenseFacts } from './DefenseFacts';
+import { ChampionCard } from './ChampionCard';
 
 
 type CacheMetadata = {
@@ -27,69 +27,6 @@ function isCacheMetadata(value: unknown): value is CacheMetadata {
   if (!value || typeof value !== 'object') return false;
   const generatedAt = (value as Record<string, unknown>).generatedAt;
   return typeof generatedAt === 'string' && !Number.isNaN(Date.parse(generatedAt));
-}
-
-function formatValue(value: string | number | null | undefined, fallback = 'Unavailable') {
-  if (value === null || value === undefined || value === '') return fallback;
-  return value;
-}
-
-function ChampionImage({ champion }: { champion: Champion }) {
-  const [failed, setFailed] = useState(!champion.imageUrl);
-
-  if (failed) {
-    return (
-      <div className="flex aspect-[4/3] items-center justify-center bg-[radial-gradient(circle_at_50%_18%,rgba(216,167,47,0.28),transparent_34%),linear-gradient(145deg,#202024,#111113)]">
-        <Trophy className="h-14 w-14 text-gold-300/80" aria-hidden="true" />
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={champion.imageUrl}
-      alt={`${champion.championName} official WWE profile headshot`}
-      className="aspect-[4/3] w-full object-cover object-top"
-      loading="lazy"
-      onError={() => setFailed(true)}
-    />
-  );
-}
-
-function StatRow({ label, value }: { label: string; value: string | number | null | undefined }) {
-  return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-4 border-t border-white/8 py-3 text-sm">
-      <dt className="font-semibold text-zinc-200">{label}</dt>
-      <dd className="max-w-[12rem] truncate text-right text-zinc-400" title={String(formatValue(value))}>
-        {formatValue(value)}
-      </dd>
-    </div>
-  );
-}
-
-function ChampionCard({ champion }: { champion: Champion }) {
-  return (
-    <article className="group overflow-hidden rounded-lg border border-white/10 bg-ink-850 shadow-card transition duration-200 hover:-translate-y-0.5 hover:border-white/20">
-      <ChampionImage champion={champion} />
-      <div className="space-y-5 p-4">
-        <div className="space-y-3">
-          <h2 className="min-h-6 text-pretty text-base font-semibold leading-6 text-zinc-100">
-            {champion.titleName}
-          </h2>
-          <p className="text-balance text-2xl font-semibold leading-tight text-white">
-            {champion.championName}
-          </p>
-          <ChampionSources champion={champion} />
-        </div>
-
-        <dl>
-          <StatRow label="Championship Date" value={champion.championshipDate} />
-          <StatRow label="Days as Champion" value={champion.daysAsChampion} />
-          <DefenseFacts champion={champion} />
-        </dl>
-      </div>
-    </article>
-  );
 }
 
 function StatusPanel({ state }: { state: Exclude<LoadState, { status: 'ready' }> }) {
@@ -242,18 +179,18 @@ export function App() {
 
   return (
     <main className="min-h-screen bg-ink-950 text-white">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-5 border-b border-white/10 pb-6 md:flex-row md:items-end md:justify-between">
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm font-medium text-zinc-400">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
+        <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-white/10 pb-4">
+          <div className="min-w-0 space-y-2">
+            <div className="inline-flex items-center gap-2 text-xs font-medium text-zinc-400">
               <CalendarDays className="h-3.5 w-3.5 text-gold-300" aria-hidden="true" />
               {formatLastUpdated(freshness)}
             </div>
             <div>
-              <h1 className="text-3xl font-semibold tracking-normal text-white sm:text-4xl">
+              <h1 className="text-2xl font-semibold tracking-normal text-white sm:text-3xl">
                 WWE Champions
               </h1>
-              <p className="mt-2 text-sm text-zinc-400 sm:text-base">{subtitle}</p>
+              <p className="mt-1 text-sm text-zinc-400">{subtitle}</p>
               <p className="mt-1 text-xs text-zinc-400">Weekly snapshot. Some day counts may be from an earlier snapshot.</p>
             </div>
           </div>
@@ -263,7 +200,7 @@ export function App() {
               if (!isLoading && !retrying) void loadSnapshot(true);
             }}
             aria-disabled={isLoading || retrying}
-            className="rounded-md border border-white/20 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300 aria-disabled:cursor-wait aria-disabled:opacity-60"
+            className="rounded-md border border-white/20 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300 aria-disabled:cursor-wait aria-disabled:opacity-60"
           >
             {retrying ? 'Reloading snapshot…' : isLoading ? 'Loading snapshot…' : 'Reload snapshot'}
           </button>
@@ -277,7 +214,7 @@ export function App() {
         {state.status === 'ready' ? (
           <section
             aria-label="Current champions"
-            className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
           >
             {state.champions.map((champion) => (
               <ChampionCard key={`${champion.titleName}-${champion.championName}`} champion={champion} />
