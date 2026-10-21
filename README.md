@@ -54,6 +54,8 @@ Use **Reload snapshot** to read the available snapshot again without running an 
 
 Entries use bounded side portraits and compact facts on mobile, retaining full title/name/date text and image-error fallbacks. The directory uses at most three desktop columns so wider screens do not force narrower cards.
 
+Search by champion or title (case-insensitive, ignoring surrounding whitespace) and combine it with Main roster, NXT, or Evolve filtering. Roster families come only from the title name; the dashboard does not infer Raw/SmackDown affiliation. No-match results offer a keyboard-accessible reset.
+
 ## Build
 
 ```bash

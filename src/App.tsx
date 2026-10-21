@@ -4,6 +4,7 @@ import { statusMessage, type FreshnessState } from './statusMessage';
 import { SnapshotNote } from './SnapshotNote';
 import type { Champion } from './champion';
 import { ChampionCard } from './ChampionCard';
+import { ChampionDirectory } from './ChampionDirectory';
 
 
 type CacheMetadata = {
@@ -212,14 +213,10 @@ export function App() {
         )}
 
         {state.status === 'ready' ? (
-          <section
-            aria-label="Current champions"
-            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
-          >
-            {state.champions.map((champion) => (
-              <ChampionCard key={`${champion.titleName}-${champion.championName}`} champion={champion} />
-            ))}
-          </section>
+          <ChampionDirectory
+            champions={state.champions}
+            renderChampion={(champion) => <ChampionCard champion={champion} />}
+          />
         ) : (
           <StatusPanel state={state} />
         )}
