@@ -11,7 +11,7 @@ A single-repository dashboard for current WWE champions. The frontend reads a lo
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 24+ (also used in CI; Node's native TypeScript support runs the status regression tests)
 - Python 3.11+
 - Chromium installed through Playwright
 
@@ -51,6 +51,8 @@ npm run dev
 Then open the local URL printed by Vite, usually `http://localhost:5173`.
 
 Use **Reload snapshot** to read the available snapshot again without running an upstream scrape. Loading, empty snapshots, and failures have reader-facing messages. A persistent polite status region announces completed record counts and failures; successful retries are announced even when the count is unchanged. A failed reload preserves the previous usable snapshot.
+
+Champion requests finish their loading/retry state independently of freshness metadata. Empty snapshots immediately report the unavailable generation time and their terminal outcome while metadata is pending; a later valid metadata response can still supply the actual generation date. Failed reloads keep the previous records and restore an actionable reload button without waiting for metadata. Request identity guards keep older responses from overwriting a newer reload.
 
 Entries use bounded side portraits and compact facts on mobile, retaining full title/name/date text and image-error fallbacks. Long names and titles wrap without clipping; a refreshed image URL can recover from a previous image failure. Reign lengths retain explicit day units, including numeric zero. The directory uses at most three desktop columns so wider screens do not force narrower cards.
 
@@ -97,4 +99,14 @@ npm run build
 - Legacy `No Title Defenses Yet` markers are ambiguous and display as **Defense history unavailable**. A known defense today preserves numeric zero; absence is stated once rather than repeated as a date and duration. Available WWE/Cagematch sources are descriptive, keyboard-accessible links on each card.
 - Defense parsing selects the current-reign match table by its number/date headers and ignores unrelated page tables. Missing or non-contiguous row numbers, unreadable dates, and incomplete rows remain unavailable rather than proving no defenses. Regression fixtures include a recorded public Cagematch match table.
 
-Run the defense/cache regressions with `python -m unittest discover -s tests -p 'test_*.py'`. The fixtures cover known defense dates, numeric zero, confirmed none, unavailable or unmatched history, incomplete listings, and conservative legacy-cache handling without requiring a live scrape.
+## Verification
+
+```bash
+npm test
+npm run build
+python -m unittest discover -s tests -p 'test_*.py'
+```
+
+The Node tests cover the OCR evidence validator and snapshot announcement outcomes. Python fixtures cover defense parsing, confirmed-none versus incomplete/unmatched history, numeric zero, and cache compatibility without live upstream access. UI acceptance additionally requires exercising the running dashboard: search/group/reset and keyboard recovery, independent metadata failure/timeout, same-count retry and stale responses, source links, image fallbacks, reduced motion, and readable reflow.
+
+Compact cards share metric tracks across neighboring entries, retain complete date text, and use subdued 8% white dividers. The layout was checked at 320, 390, 640, 768, 1024, 1280, and 1536 CSS pixels. Definition lists remain real grid boxes, preserving term/definition semantics without `display: contents`. Browser semantics and automated accessibility scans do not replace a real screen-reader session or native browser zoom verification.

@@ -107,6 +107,10 @@ export function App() {
         hasLoadedChampions.current = true;
         const result: LoadState = data.length > 0 ? { status: 'ready', champions: data } : { status: 'empty' };
         setState(result);
+        if (result.status === 'empty') {
+          setFreshness({ status: 'unavailable' });
+          setAnnouncement(statusMessage(result, { status: 'unavailable' }));
+        }
         return result;
       } catch {
         if (requestId !== currentRequest.current) return null;
@@ -123,7 +127,10 @@ export function App() {
         );
         return { status: 'error', message };
       } finally {
-        if (requestId === currentRequest.current) setIsLoading(false);
+        if (requestId === currentRequest.current) {
+          setIsLoading(false);
+          setRetrying(false);
+        }
       }
     };
 
@@ -161,7 +168,6 @@ export function App() {
         : { status: 'unavailable' };
       setFreshness(nextFreshness);
       setAnnouncement(statusMessage(result, nextFreshness));
-      setRetrying(false);
     }
   }, []);
 
