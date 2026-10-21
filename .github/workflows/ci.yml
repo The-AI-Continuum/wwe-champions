@@ -52,7 +52,7 @@ jobs:
             elif [ -f package-lock.json ]; then pm=npm;  lock=true
             fi
           fi
-          if [ -f pyproject.toml ] || ls requirements*.txt >/dev/null 2>&1; then python=true; fi
+          if [ -f pyproject.toml ] || ls requirements*.txt >/dev/null 2>&1 || [ -f .github/requirements-scraper.txt ]; then python=true; fi
           { echo "node=$node"; echo "python=$python"; echo "pm=$pm"; echo "lock=$lock"; } >> "$GITHUB_OUTPUT"
           echo "Detected: node=$node ($pm, lockfile=$lock) python=$python"
           if [ "$node" = false ] && [ "$python" = false ]; then
@@ -107,7 +107,7 @@ jobs:
             run="uv run"
           else
             python -m pip install --quiet --upgrade pip
-            for f in requirements.txt requirements-dev.txt; do [ -f "$f" ] && pip install --quiet -r "$f"; done
+            for f in requirements*.txt .github/requirements-scraper.txt; do [ -f "$f" ] && pip install --quiet -r "$f"; done
             if [ -f pyproject.toml ]; then pip install --quiet -e ".[dev]" 2>/dev/null || pip install --quiet -e .; fi
             run=""
           fi
@@ -141,7 +141,7 @@ jobs:
       - name: Audit Python dependencies
         run: |
           python -m pip install --quiet pip-audit==2.9.0
-          pip-audit -r requirements.txt
+          pip-audit -r .github/requirements-scraper.txt
 
   secrets:
     name: Secrets scan
