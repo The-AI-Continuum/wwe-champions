@@ -7,6 +7,7 @@ A single-repository dashboard for current WWE champions. The frontend reads a lo
 - Frontend: Vite, React, TypeScript, Tailwind CSS
 - Scraper: Python, Playwright, BeautifulSoup
 - Data cache: `public/champions.json`
+- CI credential inventory: [`docs/keys.md`](docs/keys.md)
 
 ## Prerequisites
 

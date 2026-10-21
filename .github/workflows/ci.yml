@@ -1,0 +1,243 @@
+# CI baseline: adapt runtime details and commit exact prerequisite names in independent-review.yml.
+#
+#   Build & test   auto-detects Node (npm/pnpm/yarn) or Python (uv/pip) and runs whatever
+#                  lint/typecheck/test/build scripts the repo already has.
+#   Secrets scan   gitleaks on the PR's commits (full history on pushes to main).
+#   Code review    Alibaba OpenCodeReview (OCR) - line-level review comments, external model.
+#   PR review      independent-review.yml -> PR-Agent (external), followed by Binding approval.
+#
+# Setup per repo (or once at org level):
+#   Secrets    OPENROUTER_CODE_REVIEW_KEY   OpenRouter key for OCR
+#              OPENROUTER_PR_APPROVER_KEY   OpenRouter key for PR-Agent (separate key on purpose)
+#   Models     OCR            qwen/qwen3-coder-flash (software template only)
+#              PR-Agent       openrouter/inception/mercury-2.5 (committed policy)
+#   Review jobs are mandatory evidence for software PRs; validate findings against code.
+#   Align branch protection and the committed prerequisite list with emitted check names.
+#   Mandatory review jobs fail when credentials are unavailable, including fork PRs.
+#   An authorized secure alternative review path is needed when secrets cannot be supplied.
+#   Draft PR review is deferred; skipped checks are not successful approval evidence.
+
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Detect stack
+        id: detect
+        run: |
+          node=false; python=false; pm=npm; lock=false
+          if [ -f package.json ]; then
+            node=true
+            if   [ -f pnpm-lock.yaml ];    then pm=pnpm; lock=true
+            elif [ -f yarn.lock ];         then pm=yarn; lock=true
+            elif [ -f package-lock.json ]; then pm=npm;  lock=true
+            fi
+          fi
+          if [ -f pyproject.toml ] || ls requirements*.txt >/dev/null 2>&1; then python=true; fi
+          { echo "node=$node"; echo "python=$python"; echo "pm=$pm"; echo "lock=$lock"; } >> "$GITHUB_OUTPUT"
+          echo "Detected: node=$node ($pm, lockfile=$lock) python=$python"
+          if [ "$node" = false ] && [ "$python" = false ]; then
+            echo "::notice::No Node or Python project found - nothing to build or test."
+          fi
+
+      # ---------- Node ----------
+      - if: steps.detect.outputs.node == 'true'
+        run: corepack enable
+      - if: steps.detect.outputs.node == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: ${{ hashFiles('.nvmrc') != '' && '.nvmrc' || '' }}
+          node-version: ${{ hashFiles('.nvmrc') == '' && '24' || '' }}
+          cache: ${{ steps.detect.outputs.lock == 'true' && steps.detect.outputs.pm || '' }}
+      - name: Install (Node)
+        if: steps.detect.outputs.node == 'true'
+        env:
+          PM: ${{ steps.detect.outputs.pm }}
+        run: |
+          case "$PM" in
+            pnpm) pnpm install --frozen-lockfile ;;
+            yarn) yarn install --immutable 2>/dev/null || yarn install --frozen-lockfile ;;
+            *)    if [ -f package-lock.json ]; then npm ci; else npm install; fi ;;
+          esac
+      - name: Lint, typecheck, test, build (Node)
+        if: steps.detect.outputs.node == 'true'
+        env:
+          PM: ${{ steps.detect.outputs.pm }}
+          CI: 'true'
+        run: |
+          has() { node -e "process.exit(require('./package.json').scripts?.['$1'] ? 0 : 1)"; }
+          ran=0
+          for s in format:check lint typecheck test build; do
+            if has "$s"; then echo "::group::$PM run $s"; "$PM" run "$s"; echo "::endgroup::"; ran=1; fi
+          done
+          if ! has typecheck && [ -f tsconfig.json ]; then npx --no-install tsc --noEmit; ran=1; fi
+          [ "$ran" = 1 ] || echo "::warning::package.json has no lint/test/build scripts - nothing was checked."
+
+      # ---------- Python ----------
+      - if: steps.detect.outputs.python == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: ${{ hashFiles('.python-version') != '' && '.python-version' || '' }}
+          python-version: ${{ hashFiles('.python-version') == '' && '3.12' || '' }}
+      - name: Install and test (Python)
+        if: steps.detect.outputs.python == 'true'
+        run: |
+          if [ -f uv.lock ]; then
+            pip install --quiet uv
+            uv sync --all-extras --dev
+            run="uv run"
+          else
+            python -m pip install --quiet --upgrade pip
+            for f in requirements.txt requirements-dev.txt; do [ -f "$f" ] && pip install --quiet -r "$f"; done
+            if [ -f pyproject.toml ]; then pip install --quiet -e ".[dev]" 2>/dev/null || pip install --quiet -e .; fi
+            run=""
+          fi
+          if [ -d tests ] || [ -d test ] || compgen -G "test_*.py" >/dev/null || compgen -G "*_test.py" >/dev/null; then
+            if ! $run python -c "import pytest" 2>/dev/null; then
+              if [ -n "$run" ]; then uv pip install --quiet pytest; else pip install --quiet pytest; fi
+            fi
+            $run python -m pytest -q
+          else
+            echo "::warning::No Python tests found - nothing was tested."
+          fi
+
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Audit production Node dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Audit Python dependencies
+        run: |
+          python -m pip install --quiet pip-audit==2.9.0
+          pip-audit -r requirements.txt
+
+  secrets:
+    name: Secrets scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # gitleaks reads git history; a shallow clone hides older commits
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Scan
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # PRs: scan only the PR's own commits. Pushes to main: scan the full history.
+          args=(git --redact --verbose --exit-code 1)
+          if [ -n "$BASE" ]; then args+=("--log-opts=$BASE..$HEAD"); fi
+          gitleaks "${args[@]}" .
+
+  code-review:
+    name: Code review (OCR)
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OCR_NO_UPDATE: '1'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Validate mandatory review credential
+        id: keys
+        env:
+          OCR_KEY: ${{ secrets.OPENROUTER_CODE_REVIEW_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${OCR_KEY//[[:space:]]/}" ]]; then
+            echo '::error::OPENROUTER_CODE_REVIEW_KEY is required for mandatory review.'
+            exit 1
+          fi
+
+      # Self-hosted runners keep /tmp between jobs; never let an older result stand in.
+      - name: Clear previous OCR result
+        run: rm -f /tmp/ocr-result.json
+
+      - name: Select all reviewable changes, including tests and fixtures
+        id: ocr-selection
+        run: |
+          # Override OCR's default test/fixture exclusions, retaining only the
+          # canonical unsupported-file exemptions. Secret/binary filters remain active.
+          printf '%s\n' '{"include":["**"],"exclude":["**/*.{md,mdx,markdown,rst,txt,csv,svg,lock,png,jpg,jpeg,gif,webp,ico,pdf}","**/{package-lock.json,pnpm-lock.yaml,npm-shrinkwrap.json}"]}' > "$RUNNER_TEMP/ocr-ci-rules.json"
+
+      - uses: alibaba/open-code-review@182898cf522da3d04157b422752d028417974e19 # v1.12.12
+        with:
+          rule: ${{ runner.temp }}/ocr-ci-rules.json
+          llm_url: https://openrouter.ai/api/v1
+          llm_auth_token: ${{ secrets.OPENROUTER_CODE_REVIEW_KEY }}
+          llm_model: qwen/qwen3-coder-flash
+          llm_use_anthropic: 'false'
+          llm_extra_body: '{}' # Do not send the action's GLM-native thinking flag to Qwen.
+          llm_timeout: '120'
+          effort: 'medium'
+          stream_progress: 'true'
+          upload_artifacts: 'true' # The pinned action publishes the raw result before this guard.
+          ocr_version: '1.12.12'   # pin the CLI too; the action defaults to "latest"
+          sticky_summary: 'true' # update one summary comment instead of adding a new one per push
+          incremental: 'true'    # don't repeat comments already posted on earlier pushes
+
+      # Import only the trusted default-branch helper. Land the helper in a
+      # preparatory PR before migrating these workflows; never execute a helper
+      # supplied solely by the pull request being reviewed.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Require complete OCR review
+        id: ocr-complete
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+          OCR_CHANGED_FILES: ${{ runner.temp }}/ocr-changed-files.txt
+        run: |
+          # Every non-deleted changed file must be selected by OCR or be skipped by OCR's own built-in filter.
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --paginate --jq '.[] | [.status, .filename] | @tsv' > "$RUNNER_TEMP/ocr-pr-files.tsv"
+          # GitHub truncates the raw list (deletions included) at 3000 files.
+          if [ "$(wc -l < "$RUNNER_TEMP/ocr-pr-files.tsv")" -ge 3000 ]; then
+            echo '::error::The PR changes 3000+ files; GitHub truncates the list, so OCR coverage cannot be verified.'
+            exit 1
+          fi
+          awk -F '\t' '$1 != "removed" { print $2 }' "$RUNNER_TEMP/ocr-pr-files.tsv" > "$OCR_CHANGED_FILES"
+          node .github/scripts/validate-ocr-result.cjs /tmp/ocr-result.json "$PR_HEAD" > /dev/null

@@ -1,0 +1,32 @@
+name: Security
+
+# Security companion for the required-check evidence snapshot.
+# ci.yml already owns Secrets scan; this workflow restores the required SAST check
+# declared in the committed required-check list without duplicating the rest of CI.
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  sast:
+    name: SAST
+    runs-on: ubuntu-latest # keeps the shared local runners free for reviews
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run Semgrep
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/src" \
+            -w /src \
+            semgrep/semgrep:1.174.0 \
+            semgrep scan --config=p/secrets --error --quiet
