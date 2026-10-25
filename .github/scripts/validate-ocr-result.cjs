@@ -53,9 +53,9 @@ const expandBraces = glob => {
   const m = glob.match(/\{([^{}]*)\}/);
   return m ? m[1].split(',').flatMap(alt => expandBraces(glob.slice(0, m.index) + alt + glob.slice(m.index + m[0].length))) : [glob];
 };
-const globToRegExp = glob => new RegExp('^' + glob.split(/(\*\*\/|\/\*\*$|\*\*|\*|\?)/).map(part =>
-  part === '**/' ? '(?:.*/)?' : part === '/**' ? '(?:/.*)?' : part === '**' ? '.*' : part === '*' ? '[^/]*' :
-  part === '?' ? '[^/]' : part.replace(/[.+^${}()|[\]\\]/g, '\\$&')).join('') + '$');
+const globToRegExp = glob => new RegExp('^' + glob.split(/(\*\*\/|\/\*\*$|\*)/).map(part =>
+  part === '**/' ? '(?:.*/)?' : part === '/**' ? '(?:/.*)?' : part === '*' ? '[^/]*' :
+  part.replace(/[.+^${}()|[\]\\]/g, '\\$&')).join('') + '$');
 const OCR_EXCLUDE_REGEXPS = OCR_DEFAULT_EXCLUDES.flatMap(expandBraces).map(glob => globToRegExp(glob.toLowerCase()));
 
 const isUnreviewablePath = path => {
