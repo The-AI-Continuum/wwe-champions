@@ -28,6 +28,20 @@ The helper accepts Phase-injected `OMP_GH_APP_ID` and `OMP_GH_APP_PRIVATE_KEY_B6
 
 Install GH-OMP on the target repository before using the helper. `gh-omp-push` disables Git credential helpers and fails closed; it never falls back to Josh's GitHub login. Do not put local App credentials in the repository or chat.
 
+## Local OpenCode authoring bot
+
+| Name | Consumer | Delivery target | Status |
+|---|---|---|---|
+| `OPENCODE_GH_APP_ID` | `~/.local/bin/gh-opencode-token` | Phase `operations` / Production / `/github-apps/opencode` or optional local `opencode.env` | Used on every helper call; App `gh-opencode` is installed on the repository owner |
+| `OPENCODE_GH_APP_PRIVATE_KEY` | `~/.local/bin/gh-opencode-token` | Phase `operations` / Production / `/github-apps/opencode` or optional `opencode.pem` | PEM key; the helper's primary path |
+| `OPENCODE_GH_APP_PRIVATE_KEY_B64GH` | `~/.local/bin/gh-opencode-token` | Phase `operations` / Production / `/github-apps/opencode` | Base64 fallback; the stored name keeps its `GH` suffix, and `_B64` is also accepted |
+
+The helpers raise pull requests from the OpenCode harness as `gh-opencode[bot]` rather than as Josh. `gh-opencode-token` re-enters Phase with `phase run` when credentials are not already injected, requests a token limited to the target repository, decodes keys into mode-600 temporary files removed on exit, and emits a token only when GitHub returns the `ghs_` installation-token format and the installation reports `pull_requests: write`. The App holds `pull_requests: write`, `contents: write`, `actions: write`, and `metadata: read`.
+
+`gh-opencode-pr` requires the branch to exist on the remote, creates the pull request with the bot token only, then re-reads it through REST and exits non-zero unless the author is `gh-opencode[bot]` with type `Bot` and the head/base refs match. `--dry-run` authenticates and validates without creating anything. Neither helper falls back to a saved user login.
+
+Install `gh-opencode` on the target repository before use. Authoring was verified on 2026-10-25 by a throwaway pull request authored by the bot and then closed; both helpers pass `shellcheck -S warning`. Do not put local App credentials in the repository or chat.
+
 ## Built-in token
 
 `GITHUB_TOKEN` is supplied by GitHub Actions and is used only by the workflow steps that call GitHub. It is not a Phase-managed secret.
