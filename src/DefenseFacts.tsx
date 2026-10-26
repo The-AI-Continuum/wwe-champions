@@ -2,15 +2,40 @@ import { ExternalLink } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { resolveDefense, type Champion } from './champion';
 
-const METRIC_CLASS = 'grid min-w-0 content-start border-t border-white/[0.08] py-2';
-const LABEL_CLASS = 'text-xs text-zinc-400';
-const VALUE_CLASS = 'break-words text-sm font-semibold text-zinc-100';
+const LABEL_CLASS = 'text-[0.5rem] uppercase tracking-[0.12em] text-arena-muted';
+const VALUE_CLASS = 'break-words text-xs font-semibold text-arena-value';
 
-function Metric({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
+export function Metric({
+  label,
+  children,
+  className = '',
+  variant = 'default',
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+  variant?: 'default' | 'hero';
+}) {
+  const hero = variant === 'hero';
+
   return (
-    <div className={`${METRIC_CLASS} ${className}`.trim()}>
-      <dt className={LABEL_CLASS}>{label}</dt>
-      <dd className={VALUE_CLASS}>{children}</dd>
+    <div
+      className={`grid min-w-0 content-start pt-[0.45rem] ${
+        hero ? 'col-span-full border-b border-white/[0.08] pb-[0.4rem]' : 'pb-[0.3rem]'
+      } ${className}`.trim()}
+    >
+      <dt className={hero ? 'text-[0.5rem] uppercase tracking-[0.16em] text-gold-300' : LABEL_CLASS}>
+        {label}
+      </dt>
+      <dd
+        className={
+          hero
+            ? 'mt-[0.1rem] break-words text-[2.125rem] font-extrabold leading-none tracking-[-0.035em] tabular-nums text-white'
+            : VALUE_CLASS
+        }
+      >
+        {children}
+      </dd>
     </div>
   );
 }
@@ -30,7 +55,7 @@ export function DefenseFacts({ champion }: { champion: Champion }) {
     return (
       <>
         <Metric label="Last defended">{defense.lastDefenseDate}</Metric>
-        <Metric label="Since defense">
+        <Metric label="Since defense" className="col-span-full">
           {defense.daysSinceLastDefense === null ? 'Unavailable' : formatDays(defense.daysSinceLastDefense)}
         </Metric>
       </>
@@ -78,7 +103,7 @@ export function ChampionSources({ champion }: { champion: Champion }) {
   if (links.length === 0) return null;
 
   return (
-    <ul aria-label={`Sources for ${champion.championName}, ${champion.titleName}`} className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+    <ul aria-label={`Sources for ${champion.championName}, ${champion.titleName}`} className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[0.5625rem]">
       {links.map((link) => (
         <li key={link.href} className="min-w-0">
           <a

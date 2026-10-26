@@ -12,9 +12,9 @@ const FAMILY_LABELS: Record<Family, string> = {
 };
 const FAMILY_ORDER: Family[] = ['main', 'nxt', 'evolve'];
 
-const FIELD_LABEL = 'text-xs font-medium text-zinc-400';
+const FIELD_LABEL = 'text-[0.5625rem] font-medium uppercase tracking-[0.14em] text-arena-muted';
 const FIELD_CONTROL =
-  'h-10 w-full rounded-md border border-white/20 bg-ink-900 px-3 text-base text-white placeholder:text-zinc-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300';
+  'h-10 w-full rounded-[2px] border border-white/[0.16] bg-arena-field px-3 text-sm text-white placeholder:text-zinc-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300';
 
 // Titles are classified only from the title name: NXT and Evolve titles say so, anything else is Main roster.
 // The snapshot carries no Raw/SmackDown data, so no finer split is attempted.
@@ -89,7 +89,7 @@ export function ChampionDirectory({
 
   if (total === 0) {
     return (
-      <p className="rounded-lg border border-white/10 bg-ink-850 p-6 text-sm text-zinc-300">
+      <p className="rounded-[4px] border border-white/[0.08] bg-arena-card p-6 text-sm text-zinc-300">
         No champion records are available in this snapshot.
       </p>
     );
@@ -153,7 +153,7 @@ export function ChampionDirectory({
         </div>
       </div>
 
-      <p className="text-sm text-zinc-400">
+      <p className="text-[0.5625rem] uppercase tracking-[0.14em] text-arena-muted">
         {visible.length > 0
           ? `Showing ${describeCount(visible.length, total)}${isFiltered ? ` · ${familyLabel}` : ''}`
           : 'Showing 0 champions'}
@@ -176,7 +176,7 @@ export function ChampionDirectory({
           ))}
         </section>
       ) : (
-        <div className="rounded-lg border border-white/10 bg-ink-850 p-6">
+        <div className="rounded-[4px] border border-white/[0.08] bg-arena-card p-6">
           <p className="break-words text-sm text-zinc-200">
             No champions match
             {trimmedQuery !== '' && <> “{trimmedQuery}”</>}
@@ -185,7 +185,7 @@ export function ChampionDirectory({
           <button
             type="button"
             onClick={reset}
-            className="mt-4 rounded-md border border-white/20 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300"
+            className="mt-4 rounded-[2px] border border-white/20 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300"
           >
             Reset search and roster
           </button>

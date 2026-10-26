@@ -1,7 +1,7 @@
 import { Trophy } from 'lucide-react';
 import { useState } from 'react';
 import type { Champion } from './champion';
-import { ChampionSources, DefenseFacts } from './DefenseFacts';
+import { ChampionSources, DefenseFacts, Metric } from './DefenseFacts';
 
 function formatValue(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === '') return 'Unavailable';
@@ -10,11 +10,12 @@ function formatValue(value: string | number | null | undefined) {
 
 function ChampionImage({ champion }: { champion: Champion }) {
   const [failed, setFailed] = useState(!champion.imageUrl);
+  const frame = 'h-[4.5rem] w-[4.5rem] shrink-0';
 
   if (failed) {
     return (
-      <div className="flex h-20 w-16 shrink-0 items-center justify-center rounded-md bg-[radial-gradient(circle_at_50%_18%,rgba(216,167,47,0.28),transparent_34%),linear-gradient(145deg,#202024,#111113)] sm:h-24 sm:w-20">
-        <Trophy className="h-7 w-7 text-gold-300/80" aria-hidden="true" />
+      <div className={`flex ${frame} items-center justify-center bg-[linear-gradient(145deg,#202024,#111113)]`}>
+        <Trophy className="h-7 w-7 text-arena-muted" aria-hidden="true" />
       </div>
     );
   }
@@ -23,9 +24,9 @@ function ChampionImage({ champion }: { champion: Champion }) {
     <img
       src={champion.imageUrl}
       alt={`${champion.championName} official WWE profile headshot`}
-      width={80}
-      height={96}
-      className="h-20 w-16 shrink-0 rounded-md object-cover object-top sm:h-24 sm:w-20"
+      width={72}
+      height={72}
+      className={`${frame} object-cover object-top saturate-[.95]`}
       loading="lazy"
       onError={() => setFailed(true)}
     />
@@ -37,30 +38,28 @@ function formatDays(days: number | null | undefined) {
   return `${days.toLocaleString()} ${days === 1 ? 'day' : 'days'}`;
 }
 
-function Metric({ label, value }: { label: string; value: string | number | null | undefined }) {
-  return (
-    <div className="grid min-w-0 content-start border-t border-white/[0.08] py-2">
-      <dt className="text-xs text-zinc-400">{label}</dt>
-      <dd className="break-words text-sm font-semibold tabular-nums text-zinc-100">{formatValue(value)}</dd>
-    </div>
-  );
-}
-
 export function ChampionCard({ champion }: { champion: Champion }) {
   return (
-    <article className="row-span-3 grid grid-cols-2 grid-rows-subgrid gap-x-4 gap-y-0 overflow-hidden rounded-lg border border-white/10 bg-ink-850 px-3 pb-2 pt-3 shadow-card">
-      <div className="col-span-2 flex min-w-0 gap-3 pb-3">
+    <article className="overflow-hidden rounded-[4px] border border-white/[0.08] bg-arena-card px-[0.9rem] pb-[0.55rem] pt-[0.85rem]">
+      <div className="flex min-w-0 gap-[0.7rem] pb-[0.45rem]">
         <ChampionImage key={champion.imageUrl} champion={champion} />
-        <div className="min-w-0 flex-1 space-y-1">
-          <h2 className="break-words text-pretty text-xs font-semibold leading-4 text-zinc-300">{champion.titleName}</h2>
-          <p className="break-words text-balance text-lg font-semibold leading-6 text-white">{champion.championName}</p>
+        <div className="min-w-0 flex-1">
+          <h2 className="break-words text-[0.5625rem] font-semibold uppercase leading-relaxed tracking-[0.12em] text-arena-muted">
+            {champion.titleName}
+          </h2>
+          <p className="mt-[0.1rem] break-words text-pretty text-[1.0625rem] font-bold leading-tight tracking-[-0.01em] text-white">
+            {champion.championName}
+          </p>
           <ChampionSources champion={champion} />
         </div>
       </div>
 
-      <dl className="col-span-2 row-span-2 grid grid-cols-subgrid grid-rows-subgrid gap-y-0">
-        <Metric label="Champion since" value={champion.championshipDate} />
-        <Metric label="Reign length" value={formatDays(champion.daysAsChampion)} />
+      {/* DOM order matches the visual order: reign length, champion since, last defended, since defense. */}
+      <dl className="mt-[0.4rem] grid grid-cols-2 gap-x-4 border-t border-white/[0.08]">
+        <Metric label="Reign length" variant="hero">
+          {formatValue(formatDays(champion.daysAsChampion))}
+        </Metric>
+        <Metric label="Champion since">{formatValue(champion.championshipDate)}</Metric>
         <DefenseFacts champion={champion} />
       </dl>
     </article>
