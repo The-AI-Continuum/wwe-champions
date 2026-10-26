@@ -1,4 +1,4 @@
-import { AlertCircle, CalendarDays } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { statusMessage, type FreshnessState } from './statusMessage';
 import { SnapshotNote } from './SnapshotNote';
@@ -47,9 +47,9 @@ function StatusPanel({ state }: { state: Exclude<LoadState, { status: 'ready' }>
   }[state.status];
 
   return (
-    <div className="rounded-lg border border-white/10 bg-ink-850 p-6 text-zinc-300">
+    <div className="rounded-[4px] border border-white/[0.08] bg-arena-card p-6 text-zinc-300">
       <div className="mb-3 flex items-center gap-3 text-white">
-        <AlertCircle className="h-5 w-5 text-gold-300" aria-hidden="true" />
+        <AlertCircle className="h-5 w-5 text-arena-muted" aria-hidden="true" />
         <h2 className="text-lg font-semibold">{copy.title}</h2>
       </div>
       <p>{copy.message}</p>
@@ -185,21 +185,18 @@ export function App() {
   }, [championCount, state.status]);
 
   return (
-    <main className="min-h-screen bg-ink-950 text-white">
+    <main className="min-h-screen bg-ink-950 text-white tabular-nums">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
-        <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-white/10 pb-4">
+        <header className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
           <div className="min-w-0 space-y-2">
-            <div className="inline-flex items-center gap-2 text-xs font-medium text-zinc-400">
-              <CalendarDays className="h-3.5 w-3.5 text-gold-300" aria-hidden="true" />
+            <h1 className="inline-block border-b-2 border-gold-300 pb-1 text-[1.6rem] font-extrabold uppercase leading-none tracking-[-0.01em] text-white sm:text-[2rem]">
+              WWE Champions
+            </h1>
+            <p className="text-xs text-zinc-400">{subtitle}</p>
+            <p className="text-[0.625rem] text-arena-muted">Weekly snapshot. Some day counts may be from an earlier snapshot.</p>
+            <p className="text-[0.5625rem] uppercase tracking-[0.12em] text-arena-muted">
               {formatLastUpdated(freshness)}
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-normal text-white sm:text-3xl">
-                WWE Champions
-              </h1>
-              <p className="mt-1 text-sm text-zinc-400">{subtitle}</p>
-              <p className="mt-1 text-xs text-zinc-400">Weekly snapshot. Some day counts may be from an earlier snapshot.</p>
-            </div>
+            </p>
           </div>
           <button
             type="button"
@@ -207,7 +204,7 @@ export function App() {
               if (!isLoading && !retrying) void loadSnapshot(true);
             }}
             aria-disabled={isLoading || retrying}
-            className="rounded-md border border-white/20 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300 aria-disabled:cursor-wait aria-disabled:opacity-60"
+            className="self-start rounded-[2px] border border-white/20 px-3 py-2 text-[0.5625rem] font-semibold uppercase tracking-[0.14em] text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300 aria-disabled:cursor-wait aria-disabled:opacity-60 sm:justify-self-end"
           >
             {retrying ? 'Reloading snapshot…' : isLoading ? 'Loading snapshot…' : 'Reload snapshot'}
           </button>
