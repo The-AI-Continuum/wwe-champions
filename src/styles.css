@@ -17,9 +17,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background:
-    linear-gradient(180deg, rgba(248, 215, 122, 0.06), transparent 18rem),
-    #09090a;
+  background: #09090a;
 }
 
 button,

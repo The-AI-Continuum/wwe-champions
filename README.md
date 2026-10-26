@@ -54,9 +54,11 @@ Use **Reload snapshot** to read the available snapshot again without running an 
 
 Champion requests finish their loading/retry state independently of freshness metadata. Empty snapshots immediately report the unavailable generation time and their terminal outcome while metadata is pending; a later valid metadata response can still supply the actual generation date. Failed reloads keep the previous records and restore an actionable reload button without waiting for metadata. Request identity guards keep older responses from overwriting a newer reload.
 
-Entries use bounded side portraits and compact facts on mobile, retaining full title/name/date text and image-error fallbacks. Long names and titles wrap without clipping; a refreshed image URL can recover from a previous image failure. Reign lengths retain explicit day units, including numeric zero. The directory uses at most three desktop columns so wider screens do not force narrower cards.
+Entries use 72×72 unframed portraits and compact facts on mobile, retaining full title/name/date text and image-error fallbacks. Long names and titles wrap without clipping; a refreshed image URL can recover from a previous image failure. Reign lengths retain explicit day units, including numeric zero. The directory uses at most three desktop columns so wider screens do not force narrower cards.
 
-Metric values use brighter semibold text to take visual priority over supporting labels, while full dates remain visible without hover disclosure. Neighboring cards share identity and fact-row heights through nested CSS subgrids, including unavailable and confirmed-no-defense states. The facts retain a semantic definition list.
+Every card leads with its reign length as a 34px hero value under a gold uppercase label; the championship title is a small kicker and the champion's name is the caption beneath it. The facts form a semantic definition list in the order they are read: reign length, champion since, last defended, then since defense or the defense-history state. Cards keep their internal alignment, but neighbouring cards no longer share metric rows — a deliberate trade for the scoreboard hierarchy, recorded in `docs/adr/0001-arena-scoreboard-visual-direction.md`.
+
+Gold is limited to the masthead rule, the reign-length label and focus rings; it is never a surface or a body-text colour.
 
 Statistic dividers use the supported `border-white/[0.08]` utility for subtle 8% white rules, consistent across all facts. Verify computed border colors in the built page when changing this styling; unsupported opacity suffixes can silently fall back to an opaque border.
 
