@@ -4,9 +4,10 @@
     "championName": "Sami Zayn",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/10/Sami_Zayn_PROFILE.png",
     "championshipDate": "September 11, 2026",
-    "daysAsChampion": 40,
-    "lastDefenseDate": "September 18, 2026",
-    "daysSinceLastDefense": 33,
+    "daysAsChampion": 46,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/sami-zayn",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=20"
@@ -17,9 +18,10 @@
     "championName": "Roman Reigns",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/05/Roman_Reigns_PROFILE.png",
     "championshipDate": "April 19, 2026",
-    "daysAsChampion": 185,
-    "lastDefenseDate": "October 10, 2026",
-    "daysSinceLastDefense": 11,
+    "daysAsChampion": 191,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/roman-reigns",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=6069"
@@ -30,8 +32,9 @@
     "championName": "Liv Morgan",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/10/LivTitle_Profile.png",
     "championshipDate": "October 10, 2026",
-    "daysAsChampion": 11,
-    "lastDefenseDate": "No Title Defenses Yet",
+    "daysAsChampion": 17,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
     "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/liv-morgan",
@@ -43,9 +46,10 @@
     "championName": "Chelsea Green",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/08/Chelsea_08022026MM_28291_PROFILE.png",
     "championshipDate": "August 2, 2026",
-    "daysAsChampion": 80,
-    "lastDefenseDate": "September 11, 2026",
-    "daysSinceLastDefense": 40,
+    "daysAsChampion": 86,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/chelsea-green",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=2906"
@@ -56,9 +60,10 @@
     "championName": "Chad Gable",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/08/chad_Gable_PROFILE.png",
     "championshipDate": "August 2, 2026",
-    "daysAsChampion": 80,
-    "lastDefenseDate": "October 19, 2026",
-    "daysSinceLastDefense": 2,
+    "daysAsChampion": 86,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/chad-gable",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=16"
@@ -69,9 +74,10 @@
     "championName": "Trick Williams",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/04/Trick__04202026rf_297_PROFILE.png",
     "championshipDate": "September 6, 2026",
-    "daysAsChampion": 45,
-    "lastDefenseDate": "September 25, 2026",
-    "daysSinceLastDefense": 26,
+    "daysAsChampion": 51,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/trick-williams",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=62"
@@ -82,9 +88,10 @@
     "championName": "Raquel Rodriguez",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/08/RAQUEL_07272026sb_0032_PROFILE.png",
     "championshipDate": "July 27, 2026",
-    "daysAsChampion": 86,
-    "lastDefenseDate": "August 28, 2026",
-    "daysSinceLastDefense": 54,
+    "daysAsChampion": 92,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/raquel-rodriguez",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=7174"
@@ -95,9 +102,10 @@
     "championName": "Jacy Jayne",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/08/JACY_08142026gd_0091_PROFILE.png",
     "championshipDate": "August 14, 2026",
-    "daysAsChampion": 68,
-    "lastDefenseDate": "August 24, 2026",
-    "daysSinceLastDefense": 58,
+    "daysAsChampion": 74,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/jacy-jayne",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=7151"
@@ -108,8 +116,9 @@
     "championName": "The Vision",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/09/20260922_TheVision.png",
     "championshipDate": "July 6, 2026",
-    "daysAsChampion": 107,
-    "lastDefenseDate": "No Title Defenses Yet",
+    "daysAsChampion": 113,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
     "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/bron-breakker",
@@ -121,9 +130,10 @@
     "championName": "The MFTs",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/09/20260922_MFTs.png",
     "championshipDate": "August 14, 2026",
-    "daysAsChampion": 68,
-    "lastDefenseDate": "August 21, 2026",
-    "daysSinceLastDefense": 61,
+    "daysAsChampion": 74,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/talla-tonga",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=3117"
@@ -131,14 +141,15 @@
   },
   {
     "titleName": "WWE Women's Tag Team Champions",
-    "championName": "Alexa Bliss & Tatum Paxley",
-    "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/10/BlissTatum.png",
-    "championshipDate": "October 9, 2026",
-    "daysAsChampion": 12,
-    "lastDefenseDate": "No Title Defenses Yet",
+    "championName": "Michin & B-Fab",
+    "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/10/20261023_BfabMichin.png",
+    "championshipDate": "October 23, 2026",
+    "daysAsChampion": 4,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
     "daysSinceLastDefense": null,
     "source": {
-      "wweUrl": "https://www.wwe.com/superstars/alexa-bliss",
+      "wweUrl": "https://www.wwe.com/superstars/michin",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=4066"
     }
   },
@@ -147,9 +158,10 @@
     "championName": "Grayson Waller",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/09/Grayson_PROFILE.png",
     "championshipDate": "August 30, 2026",
-    "daysAsChampion": 52,
-    "lastDefenseDate": "September 29, 2026",
-    "daysSinceLastDefense": 22,
+    "daysAsChampion": 58,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/grayson-waller",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=1789"
@@ -160,9 +172,10 @@
     "championName": "Kelani Jordan",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/09/Kelani-Jordan_09012026MP_0009_Profile.png",
     "championshipDate": "August 30, 2026",
-    "daysAsChampion": 52,
-    "lastDefenseDate": "September 8, 2026",
-    "daysSinceLastDefense": 43,
+    "daysAsChampion": 58,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/kelani-jordan",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=2021"
@@ -173,9 +186,10 @@
     "championName": "Jackson Drake",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/09/Jackson-Drake_09012026MP_0090_PROFILE.png",
     "championshipDate": "August 30, 2026",
-    "daysAsChampion": 52,
-    "lastDefenseDate": "September 8, 2026",
-    "daysSinceLastDefense": 43,
+    "daysAsChampion": 58,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/jackson-drake",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=3679"
@@ -186,9 +200,10 @@
     "championName": "Zaria",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/06/zaria_PROFILE.png",
     "championshipDate": "June 9, 2026",
-    "daysAsChampion": 134,
-    "lastDefenseDate": "September 29, 2026",
-    "daysSinceLastDefense": 22,
+    "daysAsChampion": 140,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/zaria",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=6827"
@@ -199,8 +214,9 @@
     "championName": "The Vanity Project",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/09/20260922_VanityProject.png",
     "championshipDate": "August 30, 2026",
-    "daysAsChampion": 52,
-    "lastDefenseDate": "No Title Defenses Yet",
+    "daysAsChampion": 58,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
     "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/brad-baylor",
@@ -212,9 +228,10 @@
     "championName": "Harlem Lewis",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/07/HarlemLewis_Profile.png",
     "championshipDate": "June 19, 2026",
-    "daysAsChampion": 124,
-    "lastDefenseDate": "July 18, 2026",
-    "daysSinceLastDefense": 95,
+    "daysAsChampion": 130,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/harlem-lewis",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=7436"
@@ -225,9 +242,10 @@
     "championName": "Nikkita Lyons",
     "imageUrl": "https://www.wwe.com/f/styles/wwe_1_1_540/public/2026/07/Nikkita_PROFILE.png",
     "championshipDate": "May 29, 2026",
-    "daysAsChampion": 145,
-    "lastDefenseDate": "July 18, 2026",
-    "daysSinceLastDefense": 95,
+    "daysAsChampion": 151,
+    "defenseStatus": "unavailable",
+    "lastDefenseDate": null,
+    "daysSinceLastDefense": null,
     "source": {
       "wweUrl": "https://www.wwe.com/superstars/nikkita-lyons",
       "cagematchUrl": "https://www.cagematch.net/?id=5&nr=7435"
