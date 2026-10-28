@@ -157,6 +157,8 @@ jobs:
           HEAD_SHA: ${{ steps.check-target.outputs.head_sha }}
           TRUSTED_OCR_RESOLUTION_ERROR: ${{ steps.trusted-ocr-source.outputs.error }}
           TRUSTED_OCR_DOWNLOAD_OUTCOME: ${{ steps.trusted-ocr-download.outcome }}
+          # Human approver of .github/ changes; an organization account cannot review (falls back to the repo owner).
+          OWNER_APPROVER_LOGIN: ${{ vars.OWNER_APPROVER_LOGIN }}
           # Trusted default-branch configuration; keep identical to the producer list.
           REQUIRED_REVIEW_CHECK_NAMES: '["Build & test", "Secrets scan", "SAST", "Dependency audit", "work-item-link", "Code review (OCR)"]'
         uses: actions/github-script@v7
@@ -295,10 +297,11 @@ jobs:
                   const reviews = await github.paginate(github.rest.pulls.listReviews, {
                     ...context.repo, pull_number: evidence.pr.number, per_page: 100,
                   });
-                  const ownerReview = reviews.filter(review => review.user?.login === context.repo.owner &&
+                  const ownerLogin = process.env.OWNER_APPROVER_LOGIN || context.repo.owner;
+                  const ownerReview = reviews.filter(review => review.user?.login === ownerLogin &&
                     review.state !== 'COMMENTED').pop();
                   if (ownerReview?.state !== 'APPROVED' || ownerReview.commit_id !== evidence.pr.headSha) {
-                    verdict.blockReasons.push(`This PR changes .github/ (workflows or review scripts): ${context.repo.owner} must approve the current head, then re-run Independent Review.`);
+                    verdict.blockReasons.push(`This PR changes .github/ (workflows or review scripts): ${ownerLogin} must approve the current head, then re-run Independent Review.`);
                   }
                 }
                 const comments = await github.paginate(github.rest.issues.listComments, {
