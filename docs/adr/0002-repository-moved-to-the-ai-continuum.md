@@ -18,7 +18,7 @@ runner change was needed.
 - Branch protection is the repository ruleset `wwe-champions-required-checks`: the seven checks that the
   old branch protection required (strict mode kept on), plus the org ruleset `main-protection` for review rules.
   The old branch protection was deleted after its settings were backed up outside the repo.
-- The Vercel project keeps deploying from the org repository.
+- The Vercel project deploys from the org repository. The Git connection was re-pointed on 2026-10-28 (the Hobby plan accepts a public org repository), and a preview build from the org repo succeeded.
 
 ## Consequences
 
