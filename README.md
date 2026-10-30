@@ -27,7 +27,14 @@ npm install
 
 ## Generate Champion Data
 
-GitHub Actions runs this automatically every Tuesday at 08:00 UTC. If the scrape changes generated data, it opens a pull request as `gh-omp[bot]` rather than pushing directly to `main`. Review and merge the PR after the required checks pass; the dashboard's static data updates when that merge deploys.
+The weekly refresh runs on Josh's Mac as a scheduled local task, every Tuesday after Monday Night Raw and weekend PPVs. GitHub holds no GH-OMP credentials. The task writes its own helper script (for example `refresh-champions.sh` in a scratch directory, never committed) and runs it under Phase so `OMP_GH_APP_ID` and `OMP_GH_APP_PRIVATE_KEY_B64` are injected from `operations` / Production / `/github-apps/omp`. The script must:
+
+1. Skip the run if a PR from a `refresh-data/*` branch is already open.
+2. Run `python scrape.py` in a fresh clone of the default branch, then stage only `public/champions.json`, `public/metadata.json` and `index.html`. Stop if nothing changed.
+3. Commit on `refresh-data/<UTC date>` as `gh-omp[bot]` and push with `~/.omp/bin/gh-omp-push`.
+4. Mint the token with `~/.omp/bin/gh-omp-token`, confirm the App slug is `gh-omp`, and open the PR from it. It never falls back to Josh's GitHub login.
+
+If the scrape changes generated data, the PR is raised as `gh-omp[bot]` rather than pushing to `main`. Review and merge it after the required checks pass; the dashboard's static data updates when that merge deploys. If the Mac was off on Tuesday, the PR is simply late.
 
 To refresh manually:
 
