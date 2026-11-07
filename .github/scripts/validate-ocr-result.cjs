@@ -132,11 +132,23 @@ async function resolveOcrArtifact(github, repo, headSha, checkName = 'Code revie
   const { data: job } = await github.rest.actions.getJobForWorkflowRun({ ...repo, job_id: jobId });
   if (job.run_id !== runId || job.head_sha !== headSha || !Number.isSafeInteger(job.run_attempt) || job.run_attempt < 1 ||
       job.name !== checkName || job.status !== 'completed' || job.conclusion !== 'success') fail('workflow job identity, attempt or SHA is invalid');
-  const artifactName = `ocr-review-result-${runId}-${job.run_attempt}`;
   const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, { ...repo, run_id: runId, per_page: 100 });
-  const matches = artifacts.filter(value => value.name === artifactName && value.expired === false);
+  const expectedArtifactName = `ocr-review-result-${runId}-${job.run_attempt}`;
+  let matches = artifacts.filter(value => value.name === expectedArtifactName && value.expired === false);
+  if (matches.length !== 1) {
+    // On a job-only rerun, the OCR action can upload an artifact whose attempt suffix
+    // lags the job's run_attempt. Bind it to the selected successful job by upload time.
+    const jobStartedAt = Date.parse(job.started_at || '');
+    const jobCompletedAt = Date.parse(job.completed_at || '');
+    const artifactNamePattern = new RegExp(`^ocr-review-result-${runId}-[0-9]+$`);
+    matches = artifacts.filter(value => {
+      const createdAt = Date.parse(value.created_at || '');
+      return artifactNamePattern.test(value.name || '') && value.expired === false &&
+        Number.isFinite(createdAt) && createdAt >= jobStartedAt && createdAt <= jobCompletedAt;
+    });
+  }
   if (matches.length !== 1) fail('latest-attempt raw review artifact is missing, expired or ambiguous');
-  return { runId, attempt: job.run_attempt, artifactName, headSha, artifactId: matches[0].id, checkId: check.id, jobId };
+  return { runId, attempt: job.run_attempt, artifactName: matches[0].name, headSha, artifactId: matches[0].id, checkId: check.id, jobId };
 }
 
 module.exports = { validateOcrResult, resolveOcrArtifact, isUnreviewablePath, OCR_PINNED_COMMIT };
