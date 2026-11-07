@@ -52,13 +52,13 @@ jobs:
 
       # PR-Agent reviews through GitHub's API. Checkout stays on the trusted default
       # branch, so this workflow never checks out or executes pull-request code.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ github.event.repository.default_branch }}
 
       - name: Snapshot required-check evidence
         id: phase1
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           PR_URL: ${{ env.PR_URL }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
@@ -173,7 +173,7 @@ jobs:
       - name: Resolve latest OCR artifact
         id: ocr-source
         if: steps.phase1.outputs.passed == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           PR_HEAD: ${{ steps.phase1.outputs.head_sha }}
         with:
@@ -189,7 +189,7 @@ jobs:
 
       - name: Download raw OCR evidence
         if: steps.phase1.outputs.passed == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ steps.ocr-source.outputs.artifact_name }}
           path: ocr-artifacts
@@ -213,11 +213,49 @@ jobs:
           awk -F '\t' '$1 != "removed" { print $2 }' "$RUNNER_TEMP/ocr-pr-files.tsv" > "$OCR_CHANGED_FILES"
           node .github/scripts/validate-ocr-result.cjs ocr-artifacts/ocr-result.json "$PR_HEAD" ocr-source.json > ocr-evidence.json
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
 
       - run: pip install --quiet pr-agent==0.45.0 # pinned: this job reads the repo and posts to the PR
+
+      # PR-Agent drops bad extensions, lockfiles and minified bundles. A pull
+      # request touching only those gets an empty diff and no review comment;
+      # this decides, from the trusted default branch, whether that is expected.
+      - name: Snapshot reviewable file coverage
+        id: coverage
+        if: steps.phase1.outputs.passed == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const fs = require('fs');
+            const phase1 = JSON.parse(fs.readFileSync('phase1-evidence.json', 'utf8'));
+            // The classifier ships in the same change that first uses it, so the
+            // trusted default branch may not have it yet. Without it the gate keeps
+            // its previous strict behaviour: a missing review comment blocks.
+            let classifyPrFiles = null;
+            try {
+              ({ classifyPrFiles } = require('./.github/scripts/pr-agent-coverage.cjs'));
+            } catch (error) {
+              if (error.code !== 'MODULE_NOT_FOUND') throw error;
+              core.warning('Review coverage classifier is not on the default branch yet; empty coverage will stay blocking.');
+            }
+            fs.rmSync('pr-agent-coverage.json', { force: true });
+            if (classifyPrFiles) {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: phase1.pr.number,
+                per_page: 100,
+              });
+              // GitHub truncates the raw list at 3000 files, so coverage beyond that cannot be proven.
+              if (files.length >= 3000) {
+                throw new Error('The PR changes 3000+ files; GitHub truncates the list, so review coverage cannot be verified.');
+              }
+              const coverage = classifyPrFiles(files);
+              fs.writeFileSync('pr-agent-coverage.json', `${JSON.stringify(coverage, null, 2)}\n`);
+              core.setOutput('reviewable_count', String(coverage.reviewable.length));
+            }
 
       - name: Record review start
         id: review-start
@@ -241,12 +279,16 @@ jobs:
           GITHUB__USER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB__DEPLOYMENT_TYPE: user
           CONFIG__PUBLISH_OUTPUT: 'true'
-        run: python -m pr_agent.cli --pr_url "$PR_URL" review
+        # The log is evidence: an empty diff is the only reason PR-Agent may
+        # publish nothing without blocking the gate.
+        run: |
+          set -o pipefail
+          python -m pr_agent.cli --pr_url "$PR_URL" review 2>&1 | tee pr-agent-review.log
 
       - name: Build external-review evidence
         id: phase2
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           REVIEW_STARTED_AT: ${{ steps.review-start.outputs.timestamp }}
           REVIEW_OUTCOME: ${{ steps.review.outcome }}
@@ -258,6 +300,12 @@ jobs:
             const crypto = require('crypto');
             const fs = require('fs');
             const phase1 = JSON.parse(fs.readFileSync('phase1-evidence.json', 'utf8'));
+            let coverage = null;
+            try {
+              coverage = JSON.parse(fs.readFileSync('pr-agent-coverage.json', 'utf8'));
+            } catch {
+              coverage = null;
+            }
             const evidence = {
               schemaVersion: 1,
               phase: 'phase2',
@@ -298,7 +346,31 @@ jobs:
                 .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
 
               if (!reviewComment) {
-                evidence.blockReasons.push('PR-Agent completed without a published review comment.');
+                // PR-Agent publishes nothing when it loads an empty diff, which is
+                // what happens when every changed file is filtered out. Accept that
+                // only when the reviewer's own log confirms the empty diff and the
+                // trusted classifier independently agrees there is nothing to review.
+                let emptyDiffObserved = false;
+                try {
+                  emptyDiffObserved = fs.readFileSync('pr-agent-review.log', 'utf8')
+                    .split('\n')
+                    .some((line) => line.includes('Empty diff for PR:') && line.includes(phase1.pr.url));
+                } catch {
+                  emptyDiffObserved = false;
+                }
+                if (coverage && coverage.reviewable?.length === 0 && coverage.changed?.length > 0 && emptyDiffObserved) {
+                  evidence.externalReview = {
+                    reviewer: 'PR-Agent',
+                    requestedModel: process.env.REQUESTED_MODEL,
+                    credentialChannel: 'pr-approver',
+                    status: 'skipped',
+                    reason: 'no-reviewable-files',
+                    coverage,
+                    verdict: 'pass',
+                  };
+                } else {
+                  evidence.blockReasons.push('PR-Agent completed without a published review comment.');
+                }
               } else {
                 const body = reviewComment.body || '';
                 evidence.externalReview = {
@@ -310,6 +382,7 @@ jobs:
                   commentUrl: reviewComment.html_url,
                   commentCreatedAt: reviewComment.created_at,
                   contentSha256: crypto.createHash('sha256').update(body).digest('hex'),
+                  coverage,
                   verdict: 'pass',
                 };
               }
@@ -332,7 +405,7 @@ jobs:
 
       - name: Upload external-review evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: phase2-evidence-${{ steps.phase1.outputs.pr_number }}-${{ steps.phase1.outputs.head_sha }}-${{ github.run_attempt }}
           path: phase2-evidence.json

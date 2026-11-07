@@ -22,11 +22,11 @@ jobs:
     runs-on: ubuntu-latest # keeps the shared local runners free for reviews
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Run Semgrep
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/src" \
             -w /src \
-            semgrep/semgrep:1.174.0 \
+            semgrep/semgrep:1.174.0@sha256:f1f7b71861c7b28b6e0f661225a2c4f58a484f5d0f182465c6d6b3b22f972ade \
             semgrep scan --config=p/secrets --error --quiet

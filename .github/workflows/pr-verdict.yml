@@ -23,7 +23,7 @@ concurrency:
 jobs:
   verdict:
     name: PR Gatekeeper verdict
-    # Hosted runner: the self-hosted runners are reused and also run PR jobs.
+    # GitHub-hosted runner: this job holds the App key, so it never shares a runner with PR jobs.
     runs-on: ubuntu-latest
     # Holds the App key. Josh restricts this environment to main, so PR workflows cannot read it.
     environment: binding-approval
@@ -53,14 +53,14 @@ jobs:
 
       - name: Create independent reviewer token
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ secrets.CODE_REVIEW_AND_PR_BOT_REVIEW_APP_ID }}
           private-key: ${{ steps.app-key.outputs.private_key }}
 
       - name: Start binding approval check on the PR head
         id: check-target
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
@@ -89,12 +89,12 @@ jobs:
             core.setOutput('pr_number', String(pr.number));
             core.setOutput('head_sha', pr.head.sha);
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ github.event.repository.default_branch }}
 
       - name: Download external-review evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: phase2-evidence-${{ steps.check-target.outputs.pr_number }}-${{ steps.check-target.outputs.head_sha }}-${{ github.event.workflow_run.run_attempt }}
           path: phase2-artifacts
@@ -103,7 +103,7 @@ jobs:
 
       - name: Resolve trusted OCR artifact
         id: trusted-ocr-source
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const fs = require('fs');
@@ -143,7 +143,7 @@ jobs:
         id: trusted-ocr-download
         if: steps.trusted-ocr-source.outputs.resolved == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ steps.trusted-ocr-source.outputs.artifact_name }}
           path: trusted-ocr
@@ -157,11 +157,10 @@ jobs:
           HEAD_SHA: ${{ steps.check-target.outputs.head_sha }}
           TRUSTED_OCR_RESOLUTION_ERROR: ${{ steps.trusted-ocr-source.outputs.error }}
           TRUSTED_OCR_DOWNLOAD_OUTCOME: ${{ steps.trusted-ocr-download.outcome }}
-          # Human approver of .github/ changes; an organization account cannot review (falls back to the repo owner).
-          OWNER_APPROVER_LOGIN: ${{ vars.OWNER_APPROVER_LOGIN }}
           # Trusted default-branch configuration; keep identical to the producer list.
           REQUIRED_REVIEW_CHECK_NAMES: '["Build & test", "Secrets scan", "SAST", "Dependency audit", "work-item-link", "Code review (OCR)"]'
-        uses: actions/github-script@v7
+          OWNER_APPROVER_LOGIN: ${{ vars.OWNER_APPROVER_LOGIN }}
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const fs = require('fs');
@@ -236,8 +235,13 @@ jobs:
                 new Set(checks.map(check => check.name)).size === checks.length;
               const exactCheckNames = successfulChecks && checks.length === requiredCheckNames.length &&
                 requiredCheckNames.every(name => checks.some(check => check.name === name));
+              // `skipped` is the recorded empty-coverage outcome: PR-Agent loaded no
+              // diff because every changed file is unreviewable. It is accepted only
+              // after this verifier recomputes the coverage independently below.
+              const reviewStatus = evidence.externalReview?.status;
               if (!exactCheckNames || evidence.schemaVersion !== 1 || evidence.phase1?.verdict !== 'pass' ||
-                  evidence.externalReview?.status !== 'completed' || evidence.externalReview?.verdict !== 'pass' ||
+                  (reviewStatus !== 'completed' && reviewStatus !== 'skipped') ||
+                  evidence.externalReview?.verdict !== 'pass' ||
                   evidence.externalReview?.requestedModel !== 'openrouter/inception/mercury-2.5' ||
                   evidence.verdict !== 'pass') {
                 verdict.blockReasons.push('External-review evidence does not contain a complete pass.');
@@ -292,11 +296,35 @@ jobs:
                 const prFileList = await github.paginate(github.rest.pulls.listFiles, {
                   ...context.repo, pull_number: evidence.pr.number, per_page: 100,
                 });
+                // The artifact is PR-controlled input: recompute empty coverage from the
+                // same API file list using the trusted default-branch classifier.
+                if (reviewStatus === 'skipped') {
+                  try {
+                    if (evidence.externalReview.reason !== 'no-reviewable-files') {
+                      throw new Error('Unknown empty-coverage reason');
+                    }
+                    if (prFileList.length >= 3000) throw new Error('PR file list is truncated');
+                    const { classifyPrFiles } = require('./.github/scripts/pr-agent-coverage.cjs');
+                    const trusted = classifyPrFiles(prFileList);
+                    const recorded = evidence.externalReview.coverage;
+                    if (trusted.changed.length === 0 || trusted.reviewable.length !== 0) {
+                      throw new Error('PR has reviewable files');
+                    }
+                    if (!recorded || recorded.prAgentVersion !== trusted.prAgentVersion ||
+                        JSON.stringify(recorded.changed) !== JSON.stringify(trusted.changed) ||
+                        JSON.stringify(recorded.reviewable) !== JSON.stringify(trusted.reviewable)) {
+                      throw new Error('Producer coverage does not match the trusted computation');
+                    }
+                  } catch {
+                    verdict.blockReasons.push('External review recorded empty coverage that this verifier cannot confirm.');
+                  }
+                }
                 if (prFileList.length >= 3000 || prFileList.some(file =>
                     [file.filename, file.previous_filename].some(name => name?.startsWith('.github/')))) {
                   const reviews = await github.paginate(github.rest.pulls.listReviews, {
                     ...context.repo, pull_number: evidence.pr.number, per_page: 100,
                   });
+                  // Org-owned repos: the owner is an org that cannot review, so a variable names the human approver.
                   const ownerLogin = process.env.OWNER_APPROVER_LOGIN || context.repo.owner;
                   const ownerReview = reviews.filter(review => review.user?.login === ownerLogin &&
                     review.state !== 'COMMENTED').pop();
@@ -304,18 +332,20 @@ jobs:
                     verdict.blockReasons.push(`This PR changes .github/ (workflows or review scripts): ${ownerLogin} must approve the current head, then re-run Independent Review.`);
                   }
                 }
-                const comments = await github.paginate(github.rest.issues.listComments, {
-                  owner: context.repo.owner, repo: context.repo.repo,
-                  issue_number: evidence.pr.number, per_page: 100,
-                });
-                const comment = comments.find(comment => comment.id === evidence.externalReview.commentId);
-                const startedAt = Date.parse(context.payload.workflow_run.run_started_at || context.payload.workflow_run.created_at);
-                const validReview = comment && comment.user?.login === 'github-actions[bot]' &&
-                  Number.isFinite(startedAt) && Date.parse(comment.created_at) >= startedAt &&
-                  /PR Reviewer Guide/i.test(comment.body || '') &&
-                  require('crypto').createHash('sha256').update(comment.body || '').digest('hex') === evidence.externalReview.contentSha256;
-                if (!validReview) {
-                  verdict.blockReasons.push('Published external-review evidence is missing, changed, stale, or from an unexpected actor.');
+                if (reviewStatus === 'completed') {
+                  const comments = await github.paginate(github.rest.issues.listComments, {
+                    owner: context.repo.owner, repo: context.repo.repo,
+                    issue_number: evidence.pr.number, per_page: 100,
+                  });
+                  const comment = comments.find(comment => comment.id === evidence.externalReview.commentId);
+                  const startedAt = Date.parse(context.payload.workflow_run.run_started_at || context.payload.workflow_run.created_at);
+                  const validReview = comment && comment.user?.login === 'github-actions[bot]' &&
+                    Number.isFinite(startedAt) && Date.parse(comment.created_at) >= startedAt &&
+                    /PR Reviewer Guide/i.test(comment.body || '') &&
+                    require('crypto').createHash('sha256').update(comment.body || '').digest('hex') === evidence.externalReview.contentSha256;
+                  if (!validReview) {
+                    verdict.blockReasons.push('Published external-review evidence is missing, changed, stale, or from an unexpected actor.');
+                  }
                 }
               }
             }
@@ -328,7 +358,7 @@ jobs:
       - name: Submit binding review
         id: approval
         if: steps.verdict.outputs.pass == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           PR_NUMBER: ${{ steps.verdict.outputs.pr_number }}
           HEAD_SHA: ${{ steps.verdict.outputs.head_sha }}
@@ -394,7 +424,7 @@ jobs:
       - name: Publish binding approval result on the PR head
         id: publication
         if: always() && steps.check-target.outputs.check_id != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           CHECK_ID: ${{ steps.check-target.outputs.check_id }}
           PR_NUMBER: ${{ steps.check-target.outputs.pr_number }}
@@ -446,7 +476,7 @@ jobs:
 
       - name: Upload binding-approval verdict
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: phase3-verdict-${{ steps.verdict.outputs.pr_number }}-${{ steps.verdict.outputs.head_sha }}-${{ github.run_attempt }}
           path: phase3-verdict.json
