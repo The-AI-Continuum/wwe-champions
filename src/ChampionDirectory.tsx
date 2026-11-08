@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Champion } from './champion';
 
@@ -45,13 +45,10 @@ export function ChampionDirectory({
   const [query, setQuery] = useState('');
   const [selectedFamily, setSelectedFamily] = useState<FamilyFilter>('all');
   // Empty until the visitor changes a filter, so the initial render never announces a count.
-  const [announcement, setAnnouncement] = useState('');
+  // App announces snapshot reloads, so a count made for an earlier champion list is discarded.
+  const [announced, setAnnounced] = useState({ champions, text: '' });
+  const announcement = announced.champions === champions ? announced.text : '';
   const queryRef = useRef<HTMLInputElement>(null);
-
-  // App announces snapshot reloads; discard filter counts from the previous snapshot.
-  useEffect(() => {
-    setAnnouncement('');
-  }, [champions]);
 
   const entries = useMemo(
     () =>
@@ -97,18 +94,18 @@ export function ChampionDirectory({
 
   const changeQuery = (value: string) => {
     setQuery(value);
-    setAnnouncement(describeCount(filter(value, family).length, total));
+    setAnnounced({ champions, text: describeCount(filter(value, family).length, total) });
   };
 
   const changeFamily = (value: FamilyFilter) => {
     setSelectedFamily(value);
-    setAnnouncement(describeCount(filter(query, value).length, total));
+    setAnnounced({ champions, text: describeCount(filter(query, value).length, total) });
   };
 
   const reset = () => {
     setQuery('');
     setSelectedFamily('all');
-    setAnnouncement(`Filters reset. ${describeCount(total, total)}.`);
+    setAnnounced({ champions, text: `Filters reset. ${describeCount(total, total)}.` });
     queryRef.current?.focus();
   };
 
