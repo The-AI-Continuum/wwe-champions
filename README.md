@@ -43,7 +43,7 @@ source .venv/bin/activate
 python scrape.py
 ```
 
-The scraper writes the champion array to `public/champions.json` and the completed refresh time to `public/metadata.json`. The dashboard displays that generated time when available; if the metadata cannot be read, it marks the update time unavailable while keeping valid champion records visible.
+The scraper writes the champion array to `public/champions.json` and the UTC refresh timestamp to `public/metadata.json`, captured at the start of the run so its date matches every day count. The dashboard displays that generated time when available; if the metadata cannot be read, it marks the update time unavailable while keeping valid champion records visible.
 
 Each file is written to a temporary file in the same directory and atomically swapped into place: the snapshot first, then the `index.html` social image, then `public/metadata.json` last. An interrupted refresh therefore never leaves truncated JSON or fresh metadata stamped over an old snapshot.
 
@@ -55,7 +55,7 @@ python scrape.py --accept-title "WWE Speed Champion"
 
 `--accept-title` may be repeated and applies to that run only.
 
-Day counts are fixed at refresh, not recalculated live. Retained source values may predate the generated snapshot, so the generation time is not a promise that every count was freshly obtained. The page displays dates in UTC and explains the weekly refresh cadence. WWE.com and Cagematch provide the source information; a completed refresh does not guarantee complete verification of every upstream field. Social previews describe the same weekly snapshot, not a live tracker.
+Day counts are fixed at refresh, not recalculated live. Every day count is in whole days up to the refresh's UTC date, the same date as `generatedAt`. Reign length is always recounted from the reign start date, including when Cagematch is unavailable and the refresh falls back to the current snapshot. Retained source values may predate the generated snapshot, so the generation time is not a promise that every count was freshly obtained. The page displays dates in UTC and explains the weekly refresh cadence. WWE.com and Cagematch provide the source information; a completed refresh does not guarantee complete verification of every upstream field. Social previews describe the same weekly snapshot, not a live tracker.
 
 If Cagematch is unavailable or blocks a request, the script still preserves WWE.com champion records with display-safe fallback values, and prints each fallback it used.
 
