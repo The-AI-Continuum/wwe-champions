@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { validateOcrResult } = require('../.github/scripts/validate-ocr-result.cjs');
+const { validateOcrResult, resolveOcrArtifact } = require('../.github/scripts/validate-ocr-result.cjs');
 
 const head = 'a'.repeat(40);
 const selectedFile = {
@@ -118,4 +118,154 @@ test('lockfile-only skipped review is permitted by the explicit no-reviewable-fi
 
 test('still accepts a skipped review of files OCR never reviews', () => {
   assert.equal(validateOcrResult(skippedResult(), head, ['README.md']).skipped, true);
+});
+
+// resolveOcrArtifact: the review gate's trust boundary between the PR head and the raw OCR
+// evidence it downloads. The fake client answers like the GitHub REST API for one repository.
+const repo = { owner: 'The-AI-Continuum', repo: 'wwe-champions' };
+const runId = 111;
+const jobId = 222;
+const jobStartedAt = '2026-11-07T10:00:00Z';
+const jobCompletedAt = '2026-11-07T10:05:00Z';
+
+function ocrCheck(overrides = {}) {
+  return {
+    id: 900,
+    name: 'Code review (OCR)',
+    app: { slug: 'github-actions' },
+    status: 'completed',
+    conclusion: 'success',
+    details_url: `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId}/job/${jobId}`,
+    ...overrides,
+  };
+}
+
+function ocrJob(overrides = {}) {
+  return {
+    id: jobId,
+    run_id: runId,
+    head_sha: head,
+    run_attempt: 1,
+    name: 'Code review (OCR)',
+    status: 'completed',
+    conclusion: 'success',
+    started_at: jobStartedAt,
+    completed_at: jobCompletedAt,
+    ...overrides,
+  };
+}
+
+function ocrArtifact(overrides = {}) {
+  return {
+    id: 5000,
+    name: `ocr-review-result-${runId}-1`,
+    expired: false,
+    created_at: '2026-11-07T10:04:00Z',
+    ...overrides,
+  };
+}
+
+function fakeGithub({ checks = [ocrCheck()], jobs = [ocrJob()], artifacts = [ocrArtifact()] } = {}) {
+  const listForRef = async params => ({ data: params.ref === head ? checks : [] });
+  const listWorkflowRunArtifacts = async params => ({ data: params.run_id === runId ? artifacts : [] });
+  return {
+    paginate: async (method, params) => (await method(params)).data,
+    rest: {
+      checks: { listForRef },
+      actions: {
+        listWorkflowRunArtifacts,
+        getJobForWorkflowRun: async params => {
+          const job = jobs.find(value => value.id === params.job_id);
+          if (!job) throw new Error('Not Found');
+          return { data: job };
+        },
+      },
+    },
+  };
+}
+
+const resolve = fixture => resolveOcrArtifact(fakeGithub(fixture), repo, head);
+const invalidCheck = /latest OCR check is not a successful GitHub Actions check/;
+const invalidJob = /workflow job identity, attempt or SHA is invalid/;
+const missingOrAmbiguousArtifact = /raw review artifact is missing, expired or ambiguous/;
+
+test('resolves the raw review artifact of the successful OCR job for the PR head', async () => {
+  assert.deepEqual(await resolve(), {
+    runId,
+    attempt: 1,
+    artifactName: `ocr-review-result-${runId}-1`,
+    headSha: head,
+    artifactId: 5000,
+    checkId: 900,
+    jobId,
+  });
+});
+
+test('rejects a PR head with no OCR check', async () => {
+  await assert.rejects(resolve({ checks: [] }), invalidCheck);
+});
+
+test('rejects an OCR check that did not succeed', async () => {
+  await assert.rejects(resolve({ checks: [ocrCheck({ conclusion: 'failure' })] }), invalidCheck);
+  await assert.rejects(resolve({ checks: [ocrCheck({ status: 'in_progress', conclusion: null })] }), invalidCheck);
+});
+
+test('rejects an OCR check posted by an app other than GitHub Actions', async () => {
+  await assert.rejects(resolve({ checks: [ocrCheck({ app: { slug: 'impostor-app' } })] }), invalidCheck);
+});
+
+test('rejects when the newest OCR check failed: an older success cannot vouch for a later failure', async () => {
+  const checks = [ocrCheck(), ocrCheck({ id: 901, conclusion: 'failure' })];
+  await assert.rejects(resolve({ checks }), invalidCheck);
+});
+
+test('rejects an OCR check whose job URL points at another repository', async () => {
+  const details_url = `https://github.com/someone-else/${repo.repo}/actions/runs/${runId}/job/${jobId}`;
+  await assert.rejects(resolve({ checks: [ocrCheck({ details_url })] }), /check URL does not belong to this repository/);
+});
+
+test('rejects a workflow job that is not the OCR job named by the check', async () => {
+  await assert.rejects(resolve({ jobs: [ocrJob({ name: 'Some other job' })] }), invalidJob);
+  await assert.rejects(resolve({ jobs: [ocrJob({ run_id: runId + 1 })] }), invalidJob);
+  await assert.rejects(resolve({ jobs: [ocrJob({ run_attempt: 0 })] }), invalidJob);
+  await assert.rejects(resolve({ jobs: [ocrJob({ conclusion: 'failure' })] }), invalidJob);
+});
+
+test('rejects a workflow job that reviewed a different head SHA', async () => {
+  await assert.rejects(resolve({ jobs: [ocrJob({ head_sha: 'c'.repeat(40) })] }), invalidJob);
+});
+
+test('rejects when the OCR run has no unexpired raw review artifact', async () => {
+  await assert.rejects(resolve({ artifacts: [] }), missingOrAmbiguousArtifact);
+  await assert.rejects(resolve({ artifacts: [ocrArtifact({ expired: true })] }), missingOrAmbiguousArtifact);
+  await assert.rejects(resolve({ artifacts: [ocrArtifact({ name: 'unrelated-artifact' })] }), missingOrAmbiguousArtifact);
+});
+
+test('rejects when more than one artifact could be the raw review evidence', async () => {
+  const artifacts = [
+    ocrArtifact({ id: 5001, name: `ocr-review-result-${runId}-1`, created_at: '2026-11-07T10:02:00Z' }),
+    ocrArtifact({ id: 5002, name: `ocr-review-result-${runId}-2`, created_at: '2026-11-07T10:03:00Z' }),
+  ];
+  await assert.rejects(resolve({ jobs: [ocrJob({ run_attempt: 3 })], artifacts }), missingOrAmbiguousArtifact);
+});
+
+test('on a job rerun, selects the artifact uploaded while the successful job ran', async () => {
+  // Attempt 3 uploaded under a lagging attempt-2 name; attempts 1 and 2 left their own artifacts.
+  const artifacts = [
+    ocrArtifact({ id: 5001, name: `ocr-review-result-${runId}-1`, created_at: '2026-11-07T09:00:00Z' }),
+    ocrArtifact({ id: 5002, name: `ocr-review-result-${runId}-2`, created_at: '2026-11-07T09:30:00Z' }),
+    ocrArtifact({ id: 5003, name: `ocr-review-result-${runId}-2`, created_at: '2026-11-07T10:04:00Z' }),
+  ];
+  const source = await resolve({ jobs: [ocrJob({ run_attempt: 3 })], artifacts });
+  assert.equal(source.artifactId, 5003);
+  assert.equal(source.artifactName, `ocr-review-result-${runId}-2`);
+  assert.equal(source.attempt, 3);
+});
+
+test('on a job rerun, rejects when no artifact was uploaded while the successful job ran', async () => {
+  const artifacts = [
+    ocrArtifact({ id: 5001, name: `ocr-review-result-${runId}-1`, created_at: '2026-11-07T09:00:00Z' }),
+    ocrArtifact({ id: 5002, name: `ocr-review-result-${runId}-2`, created_at: '2026-11-07T10:06:00Z' }),
+  ];
+  await assert.rejects(resolve({ jobs: [ocrJob({ run_attempt: 3 })], artifacts }), missingOrAmbiguousArtifact);
 });
