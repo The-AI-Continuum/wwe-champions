@@ -214,7 +214,7 @@ test('rejects an OCR check posted by an app other than GitHub Actions', async ()
   await assert.rejects(resolve({ checks: [ocrCheck({ app: { slug: 'impostor-app' } })] }), invalidCheck);
 });
 
-test('rejects when the latest OCR check failed even though an earlier one succeeded', async () => {
+test('rejects when the newest OCR check failed: an older success cannot vouch for a later failure', async () => {
   const checks = [ocrCheck(), ocrCheck({ id: 901, conclusion: 'failure' })];
   await assert.rejects(resolve({ checks }), invalidCheck);
 });
