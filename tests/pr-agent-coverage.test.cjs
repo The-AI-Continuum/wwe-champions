@@ -3,7 +3,7 @@ const test = require('node:test');
 const { classifyPrFiles, isLockfilePath } = require('../.github/scripts/pr-agent-coverage.cjs');
 
 test('dependency lockfiles are recognised by basename at any depth', () => {
-  for (const file of ['package-lock.json', 'web/pnpm-lock.yaml', 'Cargo.lock', 'go.sum', 'npm-shrinkwrap.json', 'nested/yarn.lock']) {
+  for (const file of ['package-lock.json', 'web/pnpm-lock.yaml', 'Cargo.lock', 'go.sum', 'npm-shrinkwrap.json', 'nested/yarn.lock', 'bun.lock', 'nested/flake.lock', 'deno.lock', 'Podfile.lock', 'conan.lock', 'custom.lockb', 'Package.resolved', 'Cartfile.resolved', 'packages.lock.json', 'gradle.lockfile', 'go.work.sum']) {
     assert.equal(isLockfilePath(file), true, file);
   }
 });
@@ -52,7 +52,7 @@ test('vendor glob matches raw paths and includes newline characters', () => {
   assert.equal(coverage.filtered.find(entry => entry.file === 'dir\\package-lock.json').reason, 'auto-generated');
 });
 
-test('a skipped rename from a lockfile requires current-head owner approval', async () => {
+test('skipped lockfile changes and renames require current-head owner approval', async () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/pr-verdict.yml'), 'utf8');
@@ -62,19 +62,28 @@ test('a skipped rename from a lockfile requires current-head owner approval', as
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
   const execute = new AsyncFunction('github', 'context', 'process', 'evidence', 'verdict', 'prFileList', 'reviewStatus', 'require', workflow.slice(start, end));
   const current = 'a'.repeat(40);
-  const prFileList = [{ filename: 'vendor/dependency.json', previous_filename: 'package-lock.json', status: 'renamed' }];
-  const evidence = {
-    pr: { number: 1, headSha: current },
-    externalReview: { reason: 'no-reviewable-files', coverage: classifyPrFiles(prFileList) },
-  };
-  for (const approved of [false, true]) {
-    const verdict = { blockReasons: [] };
-    const reviews = approved ? [{ user: { login: 'owner', type: 'User' }, state: 'APPROVED', commit_id: current }] : [];
-    const github = { rest: { pulls: { listReviews() {} } }, paginate: async () => reviews };
-    await execute(github, { repo: { owner: 'org', repo: 'repo' } }, { env: { OWNER_APPROVER_LOGIN: 'owner' } },
-      evidence, verdict, prFileList, 'skipped', () => ({ classifyPrFiles, isLockfilePath }));
-    assert.equal(verdict.blockReasons.length === 0, approved);
-    if (!approved) assert.match(verdict.blockReasons[0], /dependency lockfiles/);
+  for (const prFileList of [
+    [{ filename: 'nested/bun.lock', status: 'modified' }],
+    [{ filename: 'flake.lock', status: 'removed' }],
+    [{ filename: 'vendor/Package.resolved', status: 'modified' }],
+    [{ filename: 'custom.lockb', status: 'modified' }],
+    ...['package-lock.json', 'bun.lock', 'nested/flake.lock', 'custom.lock', 'custom.lockb', 'Package.resolved', 'Cartfile.resolved', 'go.work.sum'].map(previous_filename =>
+      [{ filename: 'vendor/dependency.json', previous_filename, status: 'renamed' }]),
+  ]) {
+    const evidence = {
+      pr: { number: 1, headSha: current },
+      externalReview: { reason: 'no-reviewable-files', coverage: classifyPrFiles(prFileList) },
+    };
+    assert.deepEqual(evidence.externalReview.coverage.reviewable, []);
+    for (const approved of [false, true]) {
+      const verdict = { blockReasons: [] };
+      const reviews = approved ? [{ user: { login: 'owner', type: 'User' }, state: 'APPROVED', commit_id: current }] : [];
+      const github = { rest: { pulls: { listReviews() {} } }, paginate: async () => reviews };
+      await execute(github, { repo: { owner: 'org', repo: 'repo' } }, { env: { OWNER_APPROVER_LOGIN: 'owner' } },
+        evidence, verdict, prFileList, 'skipped', () => ({ classifyPrFiles, isLockfilePath }));
+      assert.equal(verdict.blockReasons.length === 0, approved, JSON.stringify(prFileList));
+      if (!approved) assert.match(verdict.blockReasons[0], /dependency lockfiles/);
+    }
   }
 });
 

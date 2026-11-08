@@ -45,6 +45,12 @@ const AUTO_GENERATED_NAMES = new Set([
 ]);
 const AUTO_GENERATED_SUFFIXES = ['.min.js', '.min.css', '.js.map', '.ts.map', '.css.map'];
 
+// Other lockfile formats that may be moved to a filtered destination.
+const ADDITIONAL_LOCKFILE_NAMES = new Set([
+  'npm-shrinkwrap.json', 'Package.resolved', 'Cartfile.resolved',
+  'gradle.lockfile', 'packages.lock.json', 'go.work.sum',
+]);
+
 // [ignore].glob, translated the way fnmatch.translate() does for `vendor/**`.
 const IGNORED_PATH_PATTERNS = [/^vendor\/[\s\S]*$/];
 
@@ -71,12 +77,13 @@ function isReviewablePath(filename) {
   return filterReason(filename) === null;
 }
 
-// No reviewer inspects lockfile content (PR-Agent and OCR both exclude it), so a
-// skipped review of a PR that touches one needs a human approver.
+// Skipped review of a PR touching a lockfile needs a human approver. Treat
+// every .lock and .lockb file conservatively, including dependency-manager variants.
 function isLockfilePath(filename) {
   if (!filename) return false;
   const name = basename(filename);
-  return AUTO_GENERATED_NAMES.has(name) || name === 'npm-shrinkwrap.json';
+  return name.endsWith('.lock') || name.endsWith('.lockb') ||
+    AUTO_GENERATED_NAMES.has(name) || ADDITIONAL_LOCKFILE_NAMES.has(name);
 }
 
 // `files` are GitHub pull request file objects: { filename, status }.
