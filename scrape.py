@@ -89,9 +89,10 @@ async def refresh(page_fetcher: PageFetcher, accepted_titles: Collection[str] = 
     if result.refusal is not None:
         print(result.refusal.message, file=sys.stderr)
         print("Nothing was written; the current snapshot stays exactly as it was.", file=sys.stderr)
-        if result.refusal.missing_titles:
-            print("If a title was genuinely retired, accept its absence for one run with --accept-title (repeatable):", file=sys.stderr)
-            for title in result.refusal.missing_titles:
+        accepted = result.refusal.missing_titles + [item.title for item in result.refusal.disagreements]
+        if accepted:
+            print("If a title was genuinely retired or a title change is verified, accept its title for one run with --accept-title (repeatable):", file=sys.stderr)
+            for title in accepted:
                 print(f'  python scrape.py --accept-title "{title}"', file=sys.stderr)
         return 1
 

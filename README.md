@@ -47,10 +47,10 @@ The scraper writes the champion array to `public/champions.json` and the UTC ref
 
 Each file is written to a temporary file in the same directory and atomically swapped into place: the snapshot first, then the `index.html` social image, then `public/metadata.json` last. An interrupted refresh therefore never leaves truncated JSON or fresh metadata stamped over an old snapshot.
 
-A refresh whose WWE.com champion listing is incomplete is a refusal: if the listing is unavailable, lists no champions (a block page, interstitial or changed layout), or is missing any title in the current snapshot, `scrape.py` writes nothing, prints the missing titles to stderr and exits non-zero. The current snapshot and metadata stay exactly as they were, so the weekly task opens no PR. When a title has genuinely been retired, rerun once accepting its absence; the new snapshot simply leaves it out:
+A refresh is a refusal if the WWE.com champion listing is unavailable, lists no champions, omits a title in the current snapshot, or disagrees with Cagematch about a title's holder. The current snapshot and metadata stay exactly as they were, so the weekly task opens no PR. The refusal names each disagreeing title and both holders. Holder comparison tolerates tag-team member order and a trailing member list, but requires an exact normalized title match. Because WWE.com can show a title change before Cagematch catches up, a title change can delay the weekly refresh until Cagematch catches up. If a title was genuinely retired or a title change is verified, rerun once accepting that title:
 
 ```bash
-python scrape.py --accept-title "WWE Speed Champion"
+python scrape.py --accept-title "Intercontinental Champion"
 ```
 
 `--accept-title` may be repeated and applies to that run only.

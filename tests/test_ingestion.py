@@ -107,13 +107,26 @@ class TitleMatchingTests(unittest.IsolatedAsyncioTestCase):
     async def test_exact_title_match_holds_when_cagematch_still_shows_the_previous_champion(self):
         # WWE.com shows a title change days before Cagematch: Cagematch still lists Chelsea Green.
         # The exact title match must win over the fuzzy lookalike "WWE NXT Women's Championship".
+        # Since JOS-854 that disagreement is a refusal, so the title change is accepted for this run.
         pages = recorded_pages()
         pages[CAGEMATCH_TITLES_URL] = pages[CAGEMATCH_TITLES_URL].replace(
             "Tiffany Stratton</a> (2)", "Chelsea Green</a>"
         )
-        tiffany = by_champion(await refresh(pages))["Tiffany Stratton"]
+        result = await build_snapshot(RecordedPageFetcher(pages), [], REFRESH_DATE, accepted_titles=["WWE Women’s Champion"])
+        tiffany = by_champion(result.snapshot)["Tiffany Stratton"]
 
         self.assertEqual(tiffany["source"]["cagematchUrl"], "https://www.cagematch.net/?id=5&nr=2906")
+
+    async def test_cagematch_still_showing_the_previous_champion_is_a_refusal_naming_both_holders(self):
+        pages = recorded_pages()
+        pages[CAGEMATCH_TITLES_URL] = pages[CAGEMATCH_TITLES_URL].replace(
+            "Tiffany Stratton</a> (2)", "Chelsea Green</a>"
+        )
+        result = await build_snapshot(RecordedPageFetcher(pages), [], REFRESH_DATE)
+
+        self.assertIsNone(result.snapshot)
+        for text in ["WWE Women’s Champion", "Tiffany Stratton", "Chelsea Green"]:
+            self.assertIn(text, result.refusal.message)
 
     async def test_fuzzy_fallback_uses_the_champion_to_pick_between_similar_titles(self):
         # "Evolve Men's Champion" has no exact counterpart and reads closer to
