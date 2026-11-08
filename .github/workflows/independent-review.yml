@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 45
     env:
       # Keep the review model pinned for reproducible review evidence.
-      EXTERNAL_PR_MODEL: openrouter/inception/mercury-2.5
+      EXTERNAL_PR_MODEL: openrouter/deepseek/deepseek-v4.1-flash-1017
       PR_URL: ${{ inputs.pr_url || github.event.pull_request.html_url }}
     steps:
       - name: Validate mandatory PR-Agent credential
@@ -272,7 +272,7 @@ jobs:
           # PR-Agent hard-fails on any model absent from its built-in MAX_TOKENS
           # table, and this OpenRouter slug is not in it. Without this the job
           # posts nothing — the exact silent-green this gate exists to prevent.
-          # Mercury 2.5's published context limit; do not inherit Qwen's 1M window.
+          # Keep the configured 260000-token ceiling; do not inherit another model's context limit.
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: '260000'
           PR_REVIEWER__PERSISTENT_COMMENT: 'false'
           CONFIG__GIT_PROVIDER: github
