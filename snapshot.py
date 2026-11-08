@@ -70,20 +70,44 @@ class DefenseLookup:
     date: str | None = None
 
 
+@dataclass(frozen=True)
+class HolderDisagreement:
+    title: str
+    wwe_holder: str
+    cagematch_holder: str
+
+
 @dataclass
 class Refusal:
     """A refresh outcome that leaves the current snapshot exactly as it was."""
 
     missing_titles: list[str]
+    disagreements: list[HolderDisagreement] = field(default_factory=list)
 
     @property
     def message(self) -> str:
-        if not self.missing_titles:
+        messages = []
+        if self.missing_titles:
+            messages.append("the WWE.com champion listing is missing current titles: " + "; ".join(self.missing_titles))
+        if self.disagreements:
+            mismatches = [
+                f"{item.title} (WWE.com: {item.wwe_holder}; Cagematch: {item.cagematch_holder})"
+                for item in self.disagreements
+            ]
+            messages.append("WWE.com and Cagematch disagree about current title holders: " + "; ".join(mismatches))
+        if not messages:
             return "Refusal: the WWE.com champion listing was unavailable or listed no champions."
-        return "Refusal: the WWE.com champion listing is missing current titles: " + "; ".join(self.missing_titles) + "."
+        return "Refusal: " + "; ".join(messages) + "."
 
     def __str__(self) -> str:
         return self.message
+
+
+def normalized_holder(value: str) -> tuple[str, ...]:
+    """Normalize holder names, ignoring a team member list and member order."""
+    value = re.sub(r"\s*\([^()]*\)\s*$", "", value).strip()
+    members = [normalize_text(member) for member in re.split(r"\s*&\s*", value)]
+    return tuple(sorted(members))
 
 
 @dataclass
@@ -288,6 +312,24 @@ def best_champion_match(wwe: WweChampion, titles: list[CagematchTitle]) -> Cagem
     return max(titles, key=lambda title: similarity(wwe.champion_name, title.champion_name) if title.champion_name else 0)
 
 
+def normalized_title_match(value: str) -> str:
+    """Normalize source-specific suffixes but require an exact championship title."""
+    value = normalize_text(value)
+    value = re.sub(r"\bchampion\b", "championship", value)
+    value = re.sub(r"\bwwe\b|\bmen s\b", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    return value if value.endswith("championship") else value + " championship"
+
+
+def exact_cagematch_title(wwe: WweChampion, titles: list[CagematchTitle]) -> CagematchTitle | None:
+    key = normalized_title_match(wwe.title_name)
+    return next((title for title in titles if normalized_title_match(title.title_name) == key), None)
+
+
+def holders_agree(left: str, right: str) -> bool:
+    return normalized_holder(left) == normalized_holder(right)
+
+
 def normalize_defense(status: object, date_text: object) -> DefenseLookup:
     defense_date = display_date(date_text) if isinstance(date_text, str) else None
     if status == DEFENSE_NONE:
@@ -388,6 +430,14 @@ async def build_snapshot(page_fetcher: PageFetcher, current_snapshot: list[dict]
     ]
     if not champions or missing_titles:
         return RefreshResult(None, fallbacks, Refusal(missing_titles))
+    disagreements = []
+    for champion in champions:
+        cagematch_title = exact_cagematch_title(champion, titles)
+        if cagematch_title and not holders_agree(champion.champion_name, cagematch_title.champion_name):
+            if normalize_text(champion.title_name) not in accepted:
+                disagreements.append(HolderDisagreement(champion.title_name, champion.champion_name, cagematch_title.champion_name))
+    if disagreements:
+        return RefreshResult(None, fallbacks, Refusal(missing_titles, disagreements))
     for champion in champions:
         if champion.image_url:
             continue
