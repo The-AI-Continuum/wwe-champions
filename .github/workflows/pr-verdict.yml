@@ -298,13 +298,14 @@ jobs:
                 });
                 // The artifact is PR-controlled input: recompute empty coverage from the
                 // same API file list using the trusted default-branch classifier.
+                let lockfileSkip = false;
                 if (reviewStatus === 'skipped') {
                   try {
                     if (evidence.externalReview.reason !== 'no-reviewable-files') {
                       throw new Error('Unknown empty-coverage reason');
                     }
                     if (prFileList.length >= 3000) throw new Error('PR file list is truncated');
-                    const { classifyPrFiles } = require('./.github/scripts/pr-agent-coverage.cjs');
+                    const { classifyPrFiles, isLockfilePath } = require('./.github/scripts/pr-agent-coverage.cjs');
                     const trusted = classifyPrFiles(prFileList);
                     const recorded = evidence.externalReview.coverage;
                     if (trusted.changed.length === 0 || trusted.reviewable.length !== 0) {
@@ -315,11 +316,12 @@ jobs:
                         JSON.stringify(recorded.reviewable) !== JSON.stringify(trusted.reviewable)) {
                       throw new Error('Producer coverage does not match the trusted computation');
                     }
+                    lockfileSkip = trusted.filtered.some(entry => isLockfilePath(entry.file));
                   } catch {
                     verdict.blockReasons.push('External review recorded empty coverage that this verifier cannot confirm.');
                   }
                 }
-                if (prFileList.length >= 3000 || prFileList.some(file =>
+                if (lockfileSkip || prFileList.length >= 3000 || prFileList.some(file =>
                     [file.filename, file.previous_filename].some(name => name?.startsWith('.github/')))) {
                   const reviews = await github.paginate(github.rest.pulls.listReviews, {
                     ...context.repo, pull_number: evidence.pr.number, per_page: 100,
@@ -329,7 +331,12 @@ jobs:
                   const ownerReview = reviews.filter(review => review.user?.login === ownerLogin &&
                     review.state !== 'COMMENTED').pop();
                   if (ownerReview?.state !== 'APPROVED' || ownerReview.commit_id !== evidence.pr.headSha) {
-                    verdict.blockReasons.push(`This PR changes .github/ (workflows or review scripts): ${ownerLogin} must approve the current head, then re-run Independent Review.`);
+                    if (prFileList.length >= 3000 || prFileList.some(file =>
+                        [file.filename, file.previous_filename].some(name => name?.startsWith('.github/')))) {
+                      verdict.blockReasons.push(`This PR changes .github/ (workflows or review scripts): ${ownerLogin} must approve the current head, then re-run Independent Review.`);
+                    } else {
+                      verdict.blockReasons.push(`This PR changes only dependency lockfiles, which no reviewer inspects: ${ownerLogin} must approve the current head, then re-run Independent Review.`);
+                    }
                   }
                 }
                 if (reviewStatus === 'completed') {

@@ -71,6 +71,14 @@ function isReviewablePath(filename) {
   return filterReason(filename) === null;
 }
 
+// No reviewer inspects lockfile content (PR-Agent and OCR both exclude it), so a
+// skipped review of a PR that touches one needs a human approver.
+function isLockfilePath(filename) {
+  if (!filename) return false;
+  const name = basename(filename);
+  return AUTO_GENERATED_NAMES.has(name) || name === 'npm-shrinkwrap.json';
+}
+
 // `files` are GitHub pull request file objects: { filename, status }.
 // Deleted files carry no content for PR-Agent, so they are never reviewable.
 function classifyPrFiles(files) {
@@ -103,4 +111,5 @@ module.exports = {
   isReviewablePath,
   filterReason,
   classifyPrFiles,
+  isLockfilePath,
 };
