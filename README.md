@@ -47,7 +47,7 @@ The scraper writes the champion array to `public/champions.json` and the UTC ref
 
 Each file is written to a temporary file in the same directory and atomically swapped into place: the snapshot first, then the `index.html` social image, then `public/metadata.json` last. An interrupted refresh therefore never leaves truncated JSON or fresh metadata stamped over an old snapshot.
 
-A refresh is a refusal if the WWE.com champion listing is unavailable, lists no champions, omits a title in the current snapshot, or disagrees with Cagematch about a title's holder. The current snapshot and metadata stay exactly as they were, so the weekly task opens no PR. The refusal names each disagreeing title and both holders. Holder comparison tolerates tag-team member order and a trailing member list, but requires an exact normalized title match. Because WWE.com can show a title change before Cagematch catches up, a title change can delay the weekly refresh until Cagematch catches up. If a title was genuinely retired or a title change is verified, rerun once accepting that title:
+A refresh is a refusal if the WWE.com champion listing is unavailable, lists no champions, omits a held title in the current snapshot without Cagematch confirming that exact title as inactive, or disagrees with Cagematch about a title's holder. If an existing title is omitted by WWE and Cagematch lists it under **Inactive Titles** (and not Active Titles), the snapshot publishes that current record as vacant in its existing position. Inactive Cagematch titles that are not already in the snapshot are not added. Omission from WWE alone never confirms a new vacancy; a previously confirmed vacant record is retained during a Cagematch outage, while an unverified refill is refused. The current snapshot and metadata stay exactly as they were on refusal, so the weekly task opens no PR. The refusal names each disagreeing title and both holders. Holder comparison tolerates tag-team member order and a trailing member list, but requires an exact normalized title match. Because WWE.com can show a title change before Cagematch catches up, a title change can delay the weekly refresh until Cagematch catches up. If a title was genuinely retired or a title change is verified, rerun once accepting that title:
 
 ```bash
 python scrape.py --accept-title "Intercontinental Champion"
@@ -109,6 +109,27 @@ npm run build
   }
 }
 ```
+
+Vacant titles use this exact record shape:
+
+```json
+{
+  "titleName": "WWE Speed Champion",
+  "championName": null,
+  "vacant": true,
+  "imageUrl": null,
+  "championshipDate": null,
+  "daysAsChampion": null,
+  "lastDefenseDate": null,
+  "daysSinceLastDefense": null,
+  "source": {
+    "wweUrl": "",
+    "cagematchUrl": "https://www.cagematch.net/?id=5&nr=6760"
+  }
+}
+```
+
+A title leaves this shape and returns to an ordinary held record when WWE and Cagematch agree on its new holder. Existing snapshots without a `vacant` field remain valid and continue to be processed as ordinary records.
 
 ## Scraper Notes
 

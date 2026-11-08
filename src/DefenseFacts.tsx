@@ -87,11 +87,13 @@ function safeSourceUrl(value: string | undefined, host: string): string | null {
 }
 
 export function ChampionSources({ champion }: { champion: Champion }) {
+  const holder = champion.championName ?? 'Vacant';
   const links = [
     {
-      href: safeSourceUrl(champion.source?.wweUrl, SOURCE_HOSTS.wweUrl),
+      // A vacant title has no holder, so it never links a WWE profile.
+      href: champion.vacant ? null : safeSourceUrl(champion.source?.wweUrl, SOURCE_HOSTS.wweUrl),
       text: 'WWE profile',
-      context: ` for ${champion.championName}`,
+      context: ` for ${holder}`,
     },
     {
       href: safeSourceUrl(champion.source?.cagematchUrl, SOURCE_HOSTS.cagematchUrl),
@@ -103,7 +105,7 @@ export function ChampionSources({ champion }: { champion: Champion }) {
   if (links.length === 0) return null;
 
   return (
-    <ul aria-label={`Sources for ${champion.championName}, ${champion.titleName}`} className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[0.5625rem]">
+    <ul aria-label={`Sources for ${holder}, ${champion.titleName}`} className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[0.5625rem]">
       {links.map((link) => (
         <li key={link.href} className="min-w-0">
           <a

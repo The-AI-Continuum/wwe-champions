@@ -62,6 +62,7 @@ class CagematchTitle:
     last_defense_date: str | None = None
     cagematch_url: str = ""
     defense_status: str = DEFENSE_UNAVAILABLE
+    inactive: bool = False
 
 
 @dataclass
@@ -276,21 +277,45 @@ def find_title_url(soup: BeautifulSoup, title_name: str) -> str:
     return ""
 
 
-def extract_active_cagematch_titles(soup: BeautifulSoup) -> list[CagematchTitle]:
+def extract_cagematch_section_titles(soup: BeautifulSoup, section_name: str, *, inactive: bool) -> list[CagematchTitle]:
     titles = []
-    for row in extract_table_rows(soup):
-        if len(row) < 4 or not row[0].isdigit():
+    for caption in soup.find_all(class_="Caption"):
+        if normalize_text(caption.get_text(" ", strip=True)) != normalize_text(section_name):
             continue
-        title_name = title_to_display(row[1])
-        champion_name = re.sub(r"\s*\(\d+\)\s*$", "", row[2]).strip()
-        since_date = display_date(row[3])
-        cagematch_url = find_title_url(soup, title_name)
-        if title_name and champion_name and champion_name.upper() != "INACTIVE" and cagematch_url:
-            titles.append(CagematchTitle(title_name, champion_name, since_date, cagematch_url=cagematch_url))
+        table_container = caption.find_next_sibling(class_="Table")
+        table = table_container.find("table") if table_container else caption.find_next("table")
+        if not table:
+            continue
+        for row in extract_table_rows(table):
+            if len(row) < 4 or not row[0].isdigit():
+                continue
+            title_name = title_to_display(row[1])
+            champion_name = re.sub(r"\s*\(\d+\)\s*$", "", row[2]).strip()
+            cagematch_url = find_title_url(soup, title_name)
+            if not title_name or not cagematch_url:
+                continue
+            if inactive and champion_name.upper() != "INACTIVE":
+                continue
+            if not inactive and (not champion_name or champion_name.upper() == "INACTIVE"):
+                continue
+            titles.append(CagematchTitle(
+                title_name, "" if inactive else champion_name,
+                display_date(row[3]) if not inactive else None,
+                cagematch_url=cagematch_url, inactive=inactive,
+            ))
     return titles
 
 
+def extract_active_cagematch_titles(soup: BeautifulSoup) -> list[CagematchTitle]:
+    return extract_cagematch_section_titles(soup, "Active Titles", inactive=False)
+
+
+def extract_inactive_cagematch_titles(soup: BeautifulSoup) -> list[CagematchTitle]:
+    return extract_cagematch_section_titles(soup, "Inactive Titles", inactive=True)
+
+
 def match_cagematch(wwe: WweChampion, cagematch_titles: list[CagematchTitle]) -> CagematchTitle | None:
+    cagematch_titles = [title for title in cagematch_titles if not title.inactive]
     wwe_title = title_to_championship(wwe.title_name)
     exact = [title for title in cagematch_titles if normalize_text(title.title_name) == normalize_text(wwe_title) or normalize_text(title.title_name) == normalize_text(wwe.title_name)]
     if exact:
@@ -342,7 +367,9 @@ def normalize_defense(status: object, date_text: object) -> DefenseLookup:
 def current_snapshot_as_titles(current_snapshot: list[dict]) -> list[CagematchTitle]:
     titles = []
     for item in current_snapshot:
-        source = item.get("source") if isinstance(item, dict) else {}
+        if not isinstance(item, dict) or item.get("vacant") is True:
+            continue
+        source = item.get("source")
         if not isinstance(source, dict) or not source.get("cagematchUrl"):
             continue
         defense = normalize_defense(item.get("defenseStatus"), item.get("lastDefenseDate"))
@@ -398,11 +425,12 @@ async def build_snapshot(page_fetcher: PageFetcher, current_snapshot: list[dict]
     fallbacks: list[str] = []
     cagematch_html = await page_fetcher.fetch(CAGEMATCH_TITLES_URL)
     titles: list[CagematchTitle] = []
+    inactive_titles: list[CagematchTitle] = []
     if cagematch_html:
         soup = BeautifulSoup(cagematch_html, "html.parser")
-        if "Active Titles" in soup.get_text("\n", strip=True):
-            titles = extract_active_cagematch_titles(soup)
-    scraped_titles_found = bool(titles)
+        titles = extract_active_cagematch_titles(soup)
+        inactive_titles = extract_inactive_cagematch_titles(soup)
+    scraped_titles_found = bool(titles or inactive_titles)
     if not scraped_titles_found:
         titles = current_snapshot_as_titles(current_snapshot)
         fallbacks.append("Cagematch title index was unavailable or empty; using champion records from the current snapshot for Cagematch metadata.")
@@ -424,13 +452,56 @@ async def build_snapshot(page_fetcher: PageFetcher, current_snapshot: list[dict]
     champions = parse_wwe_champions(wwe_html) if wwe_html is not None else []
     listed = {normalize_text(champion.title_name) for champion in champions}
     accepted = {normalize_text(title) for title in accepted_titles}
-    missing_titles = [
-        str(item["titleName"]) for item in current_snapshot
-        if isinstance(item, dict) and item.get("titleName") and normalize_text(str(item["titleName"])) not in listed | accepted
-    ]
+    inactive_by_key: dict[str, list[CagematchTitle]] = {}
+    for title in inactive_titles:
+        inactive_by_key.setdefault(normalized_title_match(title.title_name), []).append(title)
+    active_keys = {normalized_title_match(title.title_name) for title in titles if not title.inactive}
+    confirmed_inactive = inactive_by_key.keys() - active_keys
+    vacant_records = {}
+    missing_titles = []
+    for index, item in enumerate(current_snapshot):
+        if not isinstance(item, dict) or not item.get("titleName"):
+            continue
+        title_name = str(item["titleName"])
+        if normalize_text(title_name) in listed | accepted:
+            continue
+        key = normalized_title_match(title_name)
+        if key in confirmed_inactive:
+            current_source = item.get("source")
+            previous_url = current_source.get("cagematchUrl") if isinstance(current_source, dict) else ""
+            candidates = inactive_by_key[key]
+            inactive = next((title for title in candidates if title.cagematch_url == previous_url), candidates[0])
+            vacant_records[index] = {
+                "titleName": title_name,
+                "championName": None,
+                "vacant": True,
+                "imageUrl": None,
+                "championshipDate": None,
+                "daysAsChampion": None,
+                "lastDefenseDate": None,
+                "daysSinceLastDefense": None,
+                "source": {"wweUrl": "", "cagematchUrl": inactive.cagematch_url or previous_url or ""},
+            }
+        elif not scraped_titles_found and item.get("vacant") is True:
+            vacant_records[index] = dict(item)
+        else:
+            missing_titles.append(title_name)
     if not champions or missing_titles:
         return RefreshResult(None, fallbacks, Refusal(missing_titles))
     disagreements = []
+    vacant_snapshot_keys = {
+        normalized_title_match(str(item.get("titleName") or ""))
+        for item in current_snapshot
+        if isinstance(item, dict) and item.get("vacant") is True
+    }
+    for champion in champions:
+        key = normalized_title_match(champion.title_name)
+        if normalize_text(champion.title_name) in accepted:
+            continue
+        if key in confirmed_inactive:
+            disagreements.append(HolderDisagreement(champion.title_name, champion.champion_name, "vacant (listed inactive)"))
+        elif not scraped_titles_found and key in vacant_snapshot_keys:
+            disagreements.append(HolderDisagreement(champion.title_name, champion.champion_name, "vacant (Cagematch unavailable)"))
     for champion in champions:
         cagematch_title = exact_cagematch_title(champion, titles)
         if cagematch_title and not holders_agree(champion.champion_name, cagematch_title.champion_name):
@@ -444,4 +515,7 @@ async def build_snapshot(page_fetcher: PageFetcher, current_snapshot: list[dict]
         profile_html = await page_fetcher.fetch(champion.wwe_url)
         if profile_html:
             champion.image_url = extract_profile_image(BeautifulSoup(profile_html, "html.parser"))
-    return RefreshResult(combine_records(champions, titles, refresh_date), fallbacks)
+    records = combine_records(champions, titles, refresh_date)
+    for index, record in sorted(vacant_records.items()):
+        records.insert(min(index, len(records)), record)
+    return RefreshResult(records, fallbacks)
