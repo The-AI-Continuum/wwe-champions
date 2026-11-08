@@ -316,7 +316,8 @@ jobs:
                         JSON.stringify(recorded.reviewable) !== JSON.stringify(trusted.reviewable)) {
                       throw new Error('Producer coverage does not match the trusted computation');
                     }
-                    lockfileSkip = trusted.filtered.some(entry => isLockfilePath(entry.file));
+                    lockfileSkip = prFileList.some(file =>
+                      [file.filename, file.previous_filename].some(isLockfilePath));
                   } catch {
                     verdict.blockReasons.push('External review recorded empty coverage that this verifier cannot confirm.');
                   }

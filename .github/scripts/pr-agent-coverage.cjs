@@ -46,7 +46,7 @@ const AUTO_GENERATED_NAMES = new Set([
 const AUTO_GENERATED_SUFFIXES = ['.min.js', '.min.css', '.js.map', '.ts.map', '.css.map'];
 
 // [ignore].glob, translated the way fnmatch.translate() does for `vendor/**`.
-const IGNORED_PATH_PATTERNS = [/^vendor\/.*$/];
+const IGNORED_PATH_PATTERNS = [/^vendor\/[\s\S]*$/];
 
 function basename(filePath) {
   return String(filePath).replace(/\\/g, '/').split('/').pop();
@@ -59,7 +59,7 @@ function filterReason(filename) {
   const name = basename(filename);
   if (AUTO_GENERATED_NAMES.has(name)) return 'auto-generated';
   if (AUTO_GENERATED_SUFFIXES.some((suffix) => filename.endsWith(suffix))) return 'auto-generated';
-  if (IGNORED_PATH_PATTERNS.some((pattern) => pattern.test(filename.replace(/\\/g, '/')))) {
+  if (IGNORED_PATH_PATTERNS.some((pattern) => pattern.test(filename))) {
     return 'ignored-path';
   }
   const extension = filename.split('.').pop();
@@ -80,7 +80,7 @@ function isLockfilePath(filename) {
 }
 
 // `files` are GitHub pull request file objects: { filename, status }.
-// Deleted files carry no content for PR-Agent, so they are never reviewable.
+// Removed files can still have reviewable deletion patches.
 function classifyPrFiles(files) {
   if (!Array.isArray(files)) throw new TypeError('classifyPrFiles expects the GitHub file list');
 
@@ -90,7 +90,6 @@ function classifyPrFiles(files) {
   for (const file of files) {
     const filename = file && file.filename;
     if (!filename || typeof filename !== 'string') throw new Error('Pull request file entry has no filename');
-    if (file.status === 'removed') continue;
     changed.push(filename);
     const reason = filterReason(filename);
     if (reason === null) reviewable.push(filename);

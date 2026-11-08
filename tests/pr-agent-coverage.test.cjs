@@ -28,6 +28,56 @@ test('a lockfile alongside a reviewable file leaves that file reviewable', () =>
   assert.deepEqual(coverage.reviewable, ['src/App.tsx']);
 });
 
+test('removed source patches remain reviewable alongside a filtered lockfile', () => {
+  const coverage = classifyPrFiles([
+    { filename: 'package-lock.json', status: 'modified' },
+    { filename: 'src/removed.ts', status: 'removed', patch: '@@ -1 +0,0 @@\n-const removed = true;' },
+  ]);
+  assert.deepEqual(coverage.changed, ['package-lock.json', 'src/removed.ts']);
+  assert.deepEqual(coverage.reviewable, ['src/removed.ts']);
+  assert.equal(coverage.filtered.some(entry => entry.file === 'package-lock.json'), true);
+});
+
+test('vendor glob matches raw paths and includes newline characters', () => {
+  const coverage = classifyPrFiles([
+    { filename: 'vendor/library.ts', status: 'modified' },
+    { filename: 'vendor/line\nbreak.ts', status: 'modified' },
+    { filename: 'vendor\\library.ts', status: 'modified' },
+    { filename: 'src/vendor/library.ts', status: 'modified' },
+    { filename: 'dir\\package-lock.json', status: 'modified' },
+  ]);
+  assert.deepEqual(coverage.reviewable, ['src/vendor/library.ts', 'vendor\\library.ts']);
+  assert.equal(coverage.filtered.find(entry => entry.file === 'vendor/line\nbreak.ts').reason, 'ignored-path');
+  assert.equal(coverage.filtered.find(entry => entry.file === 'vendor/library.ts').reason, 'ignored-path');
+  assert.equal(coverage.filtered.find(entry => entry.file === 'dir\\package-lock.json').reason, 'auto-generated');
+});
+
+test('a skipped rename from a lockfile requires current-head owner approval', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/pr-verdict.yml'), 'utf8');
+  const start = workflow.indexOf('                let lockfileSkip = false;');
+  const end = workflow.indexOf("                if (reviewStatus === 'completed')", start);
+  assert.ok(start >= 0 && end > start, 'skip verification and owner approval guard are missing');
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const execute = new AsyncFunction('github', 'context', 'process', 'evidence', 'verdict', 'prFileList', 'reviewStatus', 'require', workflow.slice(start, end));
+  const current = 'a'.repeat(40);
+  const prFileList = [{ filename: 'vendor/dependency.json', previous_filename: 'package-lock.json', status: 'renamed' }];
+  const evidence = {
+    pr: { number: 1, headSha: current },
+    externalReview: { reason: 'no-reviewable-files', coverage: classifyPrFiles(prFileList) },
+  };
+  for (const approved of [false, true]) {
+    const verdict = { blockReasons: [] };
+    const reviews = approved ? [{ user: { login: 'owner', type: 'User' }, state: 'APPROVED', commit_id: current }] : [];
+    const github = { rest: { pulls: { listReviews() {} } }, paginate: async () => reviews };
+    await execute(github, { repo: { owner: 'org', repo: 'repo' } }, { env: { OWNER_APPROVER_LOGIN: 'owner' } },
+      evidence, verdict, prFileList, 'skipped', () => ({ classifyPrFiles, isLockfilePath }));
+    assert.equal(verdict.blockReasons.length === 0, approved);
+    if (!approved) assert.match(verdict.blockReasons[0], /dependency lockfiles/);
+  }
+});
+
 test('lockfile skip requires the effective human owner approval on the current head', async () => {
   const fs = require('node:fs');
   const path = require('node:path');
