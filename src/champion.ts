@@ -3,7 +3,7 @@ export type DefenseStatus = 'known' | 'none' | 'unavailable';
 export type Champion = {
   titleName: string;
   championName: string;
-  imageUrl: string;
+  imageUrl: string | null;
   championshipDate: string | null;
   daysAsChampion: number | null;
   lastDefenseDate: string | null;
@@ -20,6 +20,42 @@ export type ResolvedDefense =
   | { status: 'known'; lastDefenseDate: string; daysSinceLastDefense: number | null }
   | { status: 'none' }
   | { status: 'unavailable' };
+
+const DEFENSE_STATUSES: readonly unknown[] = ['known', 'none', 'unavailable'] satisfies DefenseStatus[];
+
+const isStringOrNull = (value: unknown) => typeof value === 'string' || value === null;
+
+function isSource(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const source = value as Record<string, unknown>;
+  return (
+    (source.wweUrl === undefined || typeof source.wweUrl === 'string') &&
+    (source.cagematchUrl === undefined || typeof source.cagematchUrl === 'string')
+  );
+}
+
+function isChampion(value: unknown): value is Champion {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.titleName === 'string' &&
+    typeof item.championName === 'string' &&
+    isStringOrNull(item.imageUrl) &&
+    isStringOrNull(item.championshipDate) &&
+    (typeof item.daysAsChampion === 'number' || item.daysAsChampion === null) &&
+    isStringOrNull(item.lastDefenseDate) &&
+    (typeof item.daysSinceLastDefense === 'number' || item.daysSinceLastDefense === null) &&
+    // Absent only in snapshots written before the field existed.
+    (item.defenseStatus === undefined || DEFENSE_STATUSES.includes(item.defenseStatus)) &&
+    isSource(item.source)
+  );
+}
+
+/** A snapshot is accepted only when every champion record has the shape the dashboard renders. */
+export function isChampionRecords(value: unknown): value is Champion[] {
+  return Array.isArray(value) && value.every(isChampion);
+}
 
 function usableDate(value: unknown): value is string {
   // Rejects blank text and legacy/free-text markers such as "No Title Defenses Yet".
