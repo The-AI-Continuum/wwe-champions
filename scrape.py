@@ -12,7 +12,7 @@ from pathlib import Path
 
 from playwright.async_api import Browser, Error as PlaywrightError, TimeoutError, async_playwright
 
-from snapshot import CAGEMATCH_TITLES_URL, build_snapshot
+from snapshot import CAGEMATCH_TITLES_URL, WWE_SUPERSTARS_URL, build_snapshot
 
 OUTPUT_PATH = Path("public/champions.json")
 METADATA_PATH = Path("public/metadata.json")
@@ -86,7 +86,7 @@ async def main() -> None:
     for fallback in result.fallbacks:
         print(fallback)
     if result.snapshot is None:
-        return
+        raise SystemExit(f"{WWE_SUPERSTARS_URL} was unavailable after retries; champions.json and metadata.json were not written.")
 
     OUTPUT_PATH.write_text(json.dumps(result.snapshot, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"Wrote {len(result.snapshot)} champion records to {OUTPUT_PATH}")
