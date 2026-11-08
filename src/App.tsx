@@ -2,7 +2,7 @@ import { AlertCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { statusMessage, type FreshnessState } from './statusMessage';
 import { SnapshotNote } from './SnapshotNote';
-import type { Champion } from './champion';
+import { isChampionRecords, type Champion } from './champion';
 import { ChampionCard } from './ChampionCard';
 import { ChampionDirectory } from './ChampionDirectory';
 
@@ -17,12 +17,6 @@ type LoadState =
   | { status: 'empty' }
   | { status: 'error'; message: string };
 
-
-function isChampion(value: unknown): value is Champion {
-  if (!value || typeof value !== 'object') return false;
-  const item = value as Record<string, unknown>;
-  return typeof item.titleName === 'string' && typeof item.championName === 'string';
-}
 
 function isCacheMetadata(value: unknown): value is CacheMetadata {
   if (!value || typeof value !== 'object') return false;
@@ -82,16 +76,10 @@ export function App() {
   const currentRequest = useRef(0);
   const hasLoadedChampions = useRef(false);
 
-  const loadSnapshot = useCallback(async (isRetry = false) => {
+  // Mount starts from the loading state already; only a reload has to reset it (see the button).
+  const loadSnapshot = useCallback(async () => {
     const requestId = ++currentRequest.current;
     const metadataController = new AbortController();
-
-    setIsLoading(true);
-    setRetrying(isRetry);
-    setChampionError(null);
-    setAnnouncement('');
-    setFreshness({ status: 'pending' });
-    if (!hasLoadedChampions.current) setState({ status: 'loading' });
 
     const loadChampions = async (): Promise<Exclude<LoadState, { status: 'loading' }> | null> => {
       try {
@@ -99,7 +87,7 @@ export function App() {
         if (!response.ok) throw new Error(`Champion snapshot request failed with HTTP ${response.status}.`);
 
         const data: unknown = await response.json();
-        if (!Array.isArray(data) || !data.every(isChampion)) {
+        if (!isChampionRecords(data)) {
           throw new Error('The champion snapshot is not a valid champion list.');
         }
 
@@ -172,7 +160,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    void loadSnapshot(false);
+    void loadSnapshot();
     return () => {
       currentRequest.current += 1;
     };
@@ -201,7 +189,14 @@ export function App() {
           <button
             type="button"
             onClick={() => {
-              if (!isLoading && !retrying) void loadSnapshot(true);
+              if (isLoading || retrying) return;
+              setIsLoading(true);
+              setRetrying(true);
+              setChampionError(null);
+              setAnnouncement('');
+              setFreshness({ status: 'pending' });
+              if (!hasLoadedChampions.current) setState({ status: 'loading' });
+              void loadSnapshot();
             }}
             aria-disabled={isLoading || retrying}
             className="self-start rounded-[2px] border border-white/20 px-3 py-2 text-[0.5625rem] font-semibold uppercase tracking-[0.14em] text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300 aria-disabled:cursor-wait aria-disabled:opacity-60 sm:justify-self-end"
