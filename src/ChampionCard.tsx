@@ -22,7 +22,7 @@ function ChampionImage({ champion }: { champion: Champion }) {
 
   return (
     <img
-      src={champion.imageUrl}
+      src={champion.imageUrl ?? undefined}
       alt={`${champion.championName} official WWE profile headshot`}
       width={72}
       height={72}
