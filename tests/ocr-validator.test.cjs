@@ -68,3 +68,54 @@ test('rejects a failed review round even when the result says complete', () => {
     /review warnings are malformed or a requested review round failed/,
   );
 });
+
+function skippedResult() {
+  const result = completeResult({ status: 'skipped' });
+  result.manifest.terminal_state = 'skipped';
+  result.manifest.coverage.selected = [];
+  result.manifest.coverage.completed = [];
+  return result;
+}
+
+// CI explicitly selects tests and fixtures, so OCR omitting one must block rather than
+// be treated as a file OCR's built-in filter never reviews.
+const explicitlyIncludedPaths = [
+  'tests/ocr-validator.test.cjs',
+  'test/auth.test.ts',
+  'src/__tests__/a.js',
+  'tests/fixtures/data.json',
+  'pkg/foo_test.go',
+];
+
+for (const changed of explicitlyIncludedPaths) {
+  test(`rejects ${changed} omitted from a skipped or partial review`, () => {
+    assert.throws(() => validateOcrResult(skippedResult(), head, [changed]), /was not selected for review/);
+    assert.throws(
+      () => validateOcrResult(completeResult(), head, ['src/App.tsx', changed]),
+      /was not selected for review/,
+    );
+  });
+}
+
+test('accepts a test file and a fixture that OCR selected and completed', () => {
+  const testFile = { item_id: 'test-1', path: 'tests/ocr-validator.test.cjs', fingerprint: 'c'.repeat(64) };
+  const fixture = { item_id: 'fixture-1', path: 'tests/fixtures/data.json', fingerprint: 'd'.repeat(64) };
+  const result = completeResult();
+  result.manifest.coverage.selected = [selectedFile, testFile, fixture];
+  result.manifest.coverage.completed = [selectedFile, testFile, fixture];
+  const verdict = validateOcrResult(result, head, ['src/App.tsx', testFile.path, fixture.path]);
+  assert.equal(verdict.selectedFiles, 3);
+});
+
+test('lockfile-only skipped review is permitted by the explicit no-reviewable-files policy', () => {
+  const { classifyPrFiles } = require('../.github/scripts/pr-agent-coverage.cjs');
+  const files = [{ filename: 'package-lock.json', status: 'modified' }];
+  const coverage = classifyPrFiles(files);
+  assert.deepEqual(coverage.reviewable, []);
+  assert.deepEqual(coverage.filtered, [{ file: 'package-lock.json', reason: 'auto-generated' }]);
+  assert.equal(validateOcrResult(skippedResult(), head, ['package-lock.json']).skipped, true);
+});
+
+test('still accepts a skipped review of files OCR never reviews', () => {
+  assert.equal(validateOcrResult(skippedResult(), head, ['README.md']).skipped, true);
+});

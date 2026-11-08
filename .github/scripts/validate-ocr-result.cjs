@@ -2,13 +2,12 @@
 // Pure validation is shared by the producer and trusted default-branch verifier.
 const crypto = require('node:crypto');
 
-// OCR's own built-in file filter, copied from alibaba/open-code-review at the commit ci.yml pins:
+// OCR's built-in file filter is copied from alibaba/open-code-review at the commit ci.yml pins:
 // internal/config/allowlist/{supported_file_types,default_exclude_patterns}.json, applied as in
-// internal/agent/selection.go (whyExcluded). A file with an extension outside the supported list,
-// or a path matching a default exclude (tests, fixtures, generated code, vendored deps, lockfiles),
-// is never reviewed by OCR; PR-Agent still reviews it. Any other changed file OCR did not select
-// means a rule (possibly one the PR itself changed) hid it from review, so the result must block.
-// Update both lists, and OCR_PINNED_COMMIT, whenever ci.yml moves to a new OCR commit.
+// internal/agent/selection.go (whyExcluded). CI explicitly selects tests and fixtures, so their
+// default patterns are omitted here; other default exclusions and unsupported extensions remain
+// exempt. A changed file outside those exemptions that OCR did not select must block.
+// Update the lists and OCR_PINNED_COMMIT whenever ci.yml moves to a new OCR commit.
 const OCR_PINNED_COMMIT = '182898cf522da3d04157b422752d028417974e19';
 const OCR_SUPPORTED_EXTENSIONS = new Set([
   ".java", ".kt", ".kts", ".scala", ".groovy", ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs",
@@ -24,19 +23,10 @@ const OCR_SUPPORTED_EXTENSIONS = new Set([
   ".vy", ".rego",
 ]);
 const OCR_DEFAULT_EXCLUDES = [
-  "**/*_test.go", "**/src/test/java/**/*.java", "**/src/test/**/*.{kt,kts}", "**/*Test.fs",
-  "**/*.test.{js,jsx,ts,tsx}", "**/*.spec.{js,jsx,ts,tsx}", "**/__tests__/**",
-  "**/test/**/*_test.py", "**/tests/**/*_test.py", "**/*_test.py", "**/test_*.py", "**/*_spec.rb",
-  "**/spec/**/*_spec.rb", "**/*Test.java", "**/*Tests.java", "**/*_test.rs", "**/oh_modules/**",
-  "**/*.test.ets", "**/test/**/*.jl", "**/test/**/*.hs", "**/*Spec.hs", "**/test/**/*.lhs",
-  "**/*Spec.lhs", "**/tests/**/*.nim", "**/tests/**/*.R", "**/__snapshots__/**", "**/*.snap",
-  "**/testdata/**", "**/fixtures/**", "**/.ipynb_checkpoints/**", "**/*.generated.*", "**/*.gen.go",
-  "**/*.pb.go", "**/*.pb.cc", "**/*.pb.h", "**/*Test.swift", "**/*Tests.swift",
-  "**/Tests/**/*.swift", "**/tests/**/*.elm", "**/test/**/*.zig", "**/*_test.zig",
-  "**/kitex_gen/**/*.go", "**/*.capnp.h", "**/*.capnp.go", "**/*.capnp.ts", "**/*_capnp.rs",
-  "**/*_capnp.py", "**/test/**/*.ml", "**/tb_*.{v,sv,vhd,vhdl}", "**/*_tb.{v,sv,vhd,vhdl}",
-  "lib/**/*.sol", "**/*.t.sol", "**/test/**/*.sol", "**/tests/**/*.sol", "**/test/**/*.vy",
-  "**/tests/**/*.vy", "**/node_modules/**", "**/bower_components/**", "**/.pnpm-store/**",
+  "**/oh_modules/**", "**/*.snap", "**/.ipynb_checkpoints/**", "**/*.generated.*", "**/*.gen.go",
+  "**/*.pb.go", "**/*.pb.cc", "**/*.pb.h", "**/kitex_gen/**/*.go", "**/*.capnp.h",
+  "**/*.capnp.go", "**/*.capnp.ts", "**/*_capnp.rs", "**/*_capnp.py", "lib/**/*.sol",
+  "**/node_modules/**", "**/bower_components/**", "**/.pnpm-store/**",
   "**/.yarn/{cache,unplugged,releases,sdks,patches}/**", "**/.pnp.cjs", "**/.pnp.loader.mjs",
   "**/package-lock.json", "**/pnpm-lock.yaml", "**/npm-shrinkwrap.json", "**/*.min.{js,css}",
   "**/dist/**", "**/.next/**", "**/.nuxt/**", "**/.svelte-kit/**", "**/.astro/**", "**/.turbo/**",
@@ -66,8 +56,8 @@ const isUnreviewablePath = path => {
   return OCR_EXCLUDE_REGEXPS.some(re => re.test(lower)); // OCR: ExcludeDefaultPath
 };
 
-// changedFiles: the PR's non-deleted paths. Every one must be selected by OCR or be a file
-// OCR's built-in filter never reviews. fail() messages are fixed strings: never interpolate result values.
+// changedFiles: the PR's non-deleted paths. Every one must be selected by OCR or match an
+// exemption above. fail() messages are fixed strings: never interpolate result values.
 function validateOcrResult(result, expectedHead, changedFiles) {
   const fail = message => { throw new Error(`OCR: ${message}`); };
   if (!/^[a-f0-9]{40}$/i.test(expectedHead || '')) fail('expected PR head is invalid');
