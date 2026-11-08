@@ -30,7 +30,7 @@ npm install
 The weekly refresh runs on Josh's Mac as a scheduled local task, every Tuesday after Monday Night Raw and weekend PPVs. GitHub holds no GH-OMP credentials. The task writes its own helper script (for example `refresh-champions.sh` in a scratch directory, never committed) and runs it under Phase so `OMP_GH_APP_ID` and `OMP_GH_APP_PRIVATE_KEY_B64` are injected from `operations` / Production / `/github-apps/omp`. The script must:
 
 1. Skip the run if a PR from a `refresh-data/*` branch is already open.
-2. Run `python scrape.py` in a fresh clone of the default branch, then stage only `public/champions.json`, `public/metadata.json` and `index.html`. Stop if nothing changed.
+2. Run `python scrape.py` in a fresh clone of the default branch and stop if it exits non-zero (a refusal). Otherwise stage only `public/champions.json`, `public/metadata.json` and `index.html`. Stop if nothing changed.
 3. Commit on `refresh-data/<UTC date>` as `gh-omp[bot]` and push with `~/.omp/bin/gh-omp-push`.
 4. Mint the token with `~/.omp/bin/gh-omp-token`, confirm the App slug is `gh-omp`, and open the PR from it. It never falls back to Josh's GitHub login.
 
@@ -45,11 +45,21 @@ python scrape.py
 
 The scraper writes the champion array to `public/champions.json` and the completed refresh time to `public/metadata.json`. The dashboard displays that generated time when available; if the metadata cannot be read, it marks the update time unavailable while keeping valid champion records visible.
 
+Each file is written to a temporary file in the same directory and atomically swapped into place: the snapshot first, then the `index.html` social image, then `public/metadata.json` last. An interrupted refresh therefore never leaves truncated JSON or fresh metadata stamped over an old snapshot.
+
+A refresh whose WWE.com champion listing is incomplete is a refusal: if the listing is unavailable, lists no champions (a block page, interstitial or changed layout), or is missing any title in the current snapshot, `scrape.py` writes nothing, prints the missing titles to stderr and exits non-zero. The current snapshot and metadata stay exactly as they were, so the weekly task opens no PR. When a title has genuinely been retired, rerun once accepting its absence; the new snapshot simply leaves it out:
+
+```bash
+python scrape.py --accept-title "WWE Speed Champion"
+```
+
+`--accept-title` may be repeated and applies to that run only.
+
 Day counts are fixed at refresh, not recalculated live. Retained source values may predate the generated snapshot, so the generation time is not a promise that every count was freshly obtained. The page displays dates in UTC and explains the weekly refresh cadence. WWE.com and Cagematch provide the source information; a completed refresh does not guarantee complete verification of every upstream field. Social previews describe the same weekly snapshot, not a live tracker.
 
 If Cagematch is unavailable or blocks a request, the script still preserves WWE.com champion records with display-safe fallback values, and prints each fallback it used.
 
-`scrape.py` owns the browser (`LivePageFetcher`, which retries pages and clicks through WWE.com's interstitial) and the file writes. Every parsing and fallback decision lives in `snapshot.py`, whose `build_snapshot(page_fetcher, current_snapshot, refresh_date)` asks a page fetcher for pages by URL and never touches a browser or the filesystem. Tests drive it with `RecordedPageFetcher` and hand-trimmed real pages in `tests/fixtures/`.
+`scrape.py` owns the browser (`LivePageFetcher`, which retries pages and clicks through WWE.com's interstitial) and the file writes; `refresh(page_fetcher, accepted_titles)` reads the current snapshot, builds the new one and either writes it or reports the refusal. Every parsing, fallback and refusal decision lives in `snapshot.py`, whose `build_snapshot(page_fetcher, current_snapshot, refresh_date, accepted_titles)` asks a page fetcher for pages by URL and never touches a browser or the filesystem. Tests drive it with `RecordedPageFetcher` and hand-trimmed real pages in `tests/fixtures/`.
 
 ## Run the Dashboard
 
@@ -118,6 +128,6 @@ npm run build
 python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The Node tests cover the OCR evidence validator and snapshot announcement outcomes. Python tests build whole snapshots from recorded pages through `snapshot.build_snapshot`, covering defense parsing, confirmed-none versus incomplete/unmatched history, numeric zero, and falling back to the current snapshot without live upstream access. UI acceptance additionally requires exercising the running dashboard: search/group/reset and keyboard recovery, independent metadata failure/timeout, same-count retry and stale responses, source links, image fallbacks, reduced motion, and readable reflow.
+The Node tests cover the OCR evidence validator and snapshot announcement outcomes. Python tests build whole snapshots from recorded pages through `snapshot.build_snapshot`, covering defense parsing, confirmed-none versus incomplete/unmatched history, numeric zero, falling back to the current snapshot without live upstream access, and refusing empty or incomplete WWE.com listings unless a retired title is accepted. `tests/test_refresh.py` drives `scrape.refresh` in a scratch directory to prove a refusal exits non-zero with every published file byte-identical, and that an interrupted snapshot write leaves no temporary file and no fresh metadata. UI acceptance additionally requires exercising the running dashboard: search/group/reset and keyboard recovery, independent metadata failure/timeout, same-count retry and stale responses, source links, image fallbacks, reduced motion, and readable reflow.
 
 Compact cards share metric tracks across neighboring entries, retain complete date text, and use subdued 8% white dividers. The layout was checked at 320, 390, 640, 768, 1024, 1280, and 1536 CSS pixels. Definition lists remain real grid boxes, preserving term/definition semantics without `display: contents`. Browser semantics and automated accessibility scans do not replace a real screen-reader session or native browser zoom verification.
