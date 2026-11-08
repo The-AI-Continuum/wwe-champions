@@ -636,8 +636,8 @@ async def main() -> None:
             await browser.close()
 
     if not cagematch_titles:
-        cagematch_titles = existing_cache_as_cagematch_titles(OUTPUT_PATH)
-        print("Cagematch scrape returned no titles; preserving existing cached Cagematch metadata.")
+        cagematch_titles = current_snapshot_as_cagematch_titles(OUTPUT_PATH)
+        print("Cagematch scrape returned no titles; preserving Cagematch metadata from the current snapshot.")
 
     records = combine_records(wwe_champions, cagematch_titles)
     OUTPUT_PATH.write_text(json.dumps(records, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -668,7 +668,7 @@ def update_og_image(image_url: str) -> None:
         print(f"Updated og:image to {image_url}")
 
 
-def existing_cache_as_cagematch_titles(path: Path) -> list[CagematchTitle]:
+def current_snapshot_as_cagematch_titles(path: Path) -> list[CagematchTitle]:
     if not path.exists():
         return []
     try:
