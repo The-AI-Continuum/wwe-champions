@@ -43,7 +43,7 @@ source .venv/bin/activate
 python scrape.py
 ```
 
-The scraper writes the champion array to `public/champions.json` and the completed refresh time to `public/metadata.json`. The dashboard displays that generated time when available; if the metadata cannot be read, it marks the update time unavailable while keeping valid champion records visible.
+The scraper writes the champion array to `public/champions.json` and the UTC refresh timestamp to `public/metadata.json`, captured at the start of the run so its date matches every day count. The dashboard displays that generated time when available; if the metadata cannot be read, it marks the update time unavailable while keeping valid champion records visible.
 
 Each file is written to a temporary file in the same directory and atomically swapped into place: the snapshot first, then the `index.html` social image, then `public/metadata.json` last. An interrupted refresh therefore never leaves truncated JSON or fresh metadata stamped over an old snapshot.
 
