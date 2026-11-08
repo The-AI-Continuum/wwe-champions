@@ -11,7 +11,7 @@ import random
 import re
 import sys
 import tempfile
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Collection
 
@@ -81,7 +81,8 @@ async def refresh(page_fetcher: PageFetcher, accepted_titles: Collection[str] = 
     except (OSError, json.JSONDecodeError):
         current_snapshot = []
 
-    result = await build_snapshot(page_fetcher, current_snapshot, date.today(), accepted_titles)
+    refreshed_at = datetime.now(timezone.utc)
+    result = await build_snapshot(page_fetcher, current_snapshot, refreshed_at.date(), accepted_titles)
 
     for fallback in result.fallbacks:
         print(fallback)
@@ -99,7 +100,7 @@ async def refresh(page_fetcher: PageFetcher, accepted_titles: Collection[str] = 
     print(f"Wrote {len(result.snapshot)} champion records to {OUTPUT_PATH}")
     if result.snapshot[0].get("imageUrl"):
         update_og_image(result.snapshot[0]["imageUrl"])
-    generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    generated_at = refreshed_at.isoformat(timespec="seconds").replace("+00:00", "Z")
     write_atomically(METADATA_PATH, json.dumps({"generatedAt": generated_at}, indent=2) + "\n")
     print(f"Wrote refresh metadata to {METADATA_PATH}")
     return 0

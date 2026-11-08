@@ -59,7 +59,6 @@ class CagematchTitle:
     title_name: str
     champion_name: str = ""
     championship_date: str | None = None
-    days_as_champion: int | None = None
     last_defense_date: str | None = None
     cagematch_url: str = ""
     defense_status: str = DEFENSE_UNAVAILABLE
@@ -253,20 +252,17 @@ def find_title_url(soup: BeautifulSoup, title_name: str) -> str:
     return ""
 
 
-def extract_active_cagematch_titles(soup: BeautifulSoup, refresh_date: date) -> list[CagematchTitle]:
+def extract_active_cagematch_titles(soup: BeautifulSoup) -> list[CagematchTitle]:
     titles = []
     for row in extract_table_rows(soup):
         if len(row) < 4 or not row[0].isdigit():
             continue
         title_name = title_to_display(row[1])
         champion_name = re.sub(r"\s*\(\d+\)\s*$", "", row[2]).strip()
-        since_text = row[3]
-        since_date = display_date(since_text)
-        days_match = re.search(r"\((\d+)\s*(?:Tage|days?)\)", since_text, flags=re.IGNORECASE)
-        days_as_champion = int(days_match.group(1)) if days_match else days_between(parse_date(since_text), refresh_date)
+        since_date = display_date(row[3])
         cagematch_url = find_title_url(soup, title_name)
         if title_name and champion_name and champion_name.upper() != "INACTIVE" and cagematch_url:
-            titles.append(CagematchTitle(title_name, champion_name, since_date, days_as_champion, cagematch_url=cagematch_url))
+            titles.append(CagematchTitle(title_name, champion_name, since_date, cagematch_url=cagematch_url))
     return titles
 
 
@@ -312,7 +308,6 @@ def current_snapshot_as_titles(current_snapshot: list[dict]) -> list[CagematchTi
             title_name=title_to_championship(str(item.get("titleName") or "")),
             champion_name=str(item.get("championName") or ""),
             championship_date=item.get("championshipDate"),
-            days_as_champion=item.get("daysAsChampion"),
             last_defense_date=defense.date,
             cagematch_url=str(source.get("cagematchUrl") or ""),
             defense_status=defense.status,
@@ -333,7 +328,7 @@ def combine_records(wwe_champions: list[WweChampion], cagematch_titles: list[Cag
             "championName": champion.champion_name,
             "imageUrl": champion.image_url,
             "championshipDate": championship_date,
-            "daysAsChampion": matched.days_as_champion if matched and matched.days_as_champion is not None else days_between(reign_start, refresh_date),
+            "daysAsChampion": days_between(reign_start, refresh_date),
             "defenseStatus": defense.status,
             "lastDefenseDate": defense.date,
             "daysSinceLastDefense": days_between(defense_date, refresh_date) if defense_date else None,
@@ -364,7 +359,7 @@ async def build_snapshot(page_fetcher: PageFetcher, current_snapshot: list[dict]
     if cagematch_html:
         soup = BeautifulSoup(cagematch_html, "html.parser")
         if "Active Titles" in soup.get_text("\n", strip=True):
-            titles = extract_active_cagematch_titles(soup, refresh_date)
+            titles = extract_active_cagematch_titles(soup)
     scraped_titles_found = bool(titles)
     if not scraped_titles_found:
         titles = current_snapshot_as_titles(current_snapshot)

@@ -1,6 +1,12 @@
+import json
+import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
+from unittest import mock
+from zoneinfo import ZoneInfo
+
+import scrape
 
 from snapshot import (
     DEFENSE_KNOWN,
@@ -164,7 +170,7 @@ class BuildSnapshotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record["titleName"], "Undisputed WWE Champion")
         self.assertEqual(record["championName"], "Sami Zayn")
         self.assertEqual(record["championshipDate"], "September 11, 2026")
-        self.assertEqual(record["daysAsChampion"], 58)
+        self.assertEqual(record["daysAsChampion"], 57)
         self.assertEqual(record["defenseStatus"], DEFENSE_KNOWN)
         self.assertEqual(record["lastDefenseDate"], "September 18, 2026")
         self.assertEqual(record["daysSinceLastDefense"], 50)
@@ -184,6 +190,19 @@ class BuildSnapshotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.snapshot[0]["championName"], "Sami Zayn")
         self.assertTrue(result.fallbacks)
         self.assertTrue(any("cagematch" in message.casefold() for message in result.fallbacks))
+
+    async def test_cache_fallback_recounts_reign_length_from_the_reign_start_date(self):
+        record = self.current_record()
+        record["championshipDate"] = "August 2, 2026"
+        record["daysAsChampion"] = 80
+        result = await build_snapshot(
+            RecordedPageFetcher(self.pages(title_index_available=False)),
+            [record],
+            date(2026, 11, 7),
+        )
+
+        self.assertEqual(result.snapshot[0]["championshipDate"], "August 2, 2026")
+        self.assertEqual(result.snapshot[0]["daysAsChampion"], 97)
 
     async def test_missing_match_page_leaves_defense_unavailable(self):
         pages = self.pages()
@@ -268,6 +287,65 @@ class BuildSnapshotTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result.refusal)
         self.assertEqual([record["titleName"] for record in result.snapshot], ["Undisputed WWE Champion"])
+
+
+class EveningRefreshClock(datetime):
+    """A refresh at 20:30 on November 7 in Los Angeles, which is already November 8 in UTC."""
+
+    instant = datetime(2026, 11, 8, 4, 30, tzinfo=timezone.utc)
+
+    @classmethod
+    def now(cls, tz=None):
+        if tz is None:
+            return cls.instant.astimezone(ZoneInfo("America/Los_Angeles")).replace(tzinfo=None)
+        return cls.instant.astimezone(tz)
+
+    @classmethod
+    def today(cls):
+        return cls.now()
+
+
+class FakePlaywright:
+    """Stands in for the browser so the refresh reads recorded pages instead."""
+
+    def __init__(self):
+        self.chromium = self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def launch(self, **options):
+        return self
+
+    async def close(self):
+        pass
+
+
+class RefreshClockTests(unittest.IsolatedAsyncioTestCase):
+    async def test_evening_refresh_counts_days_to_the_utc_date_matching_the_refresh_metadata(self):
+        pages = BuildSnapshotTests().pages()
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "public" / "champions.json"
+            metadata_path = Path(directory) / "public" / "metadata.json"
+            with mock.patch.object(scrape, "datetime", EveningRefreshClock), \
+                    mock.patch.object(scrape, "async_playwright", FakePlaywright), \
+                    mock.patch.object(scrape, "LivePageFetcher", lambda browser: RecordedPageFetcher(pages)), \
+                    mock.patch.object(scrape, "OUTPUT_PATH", output_path), \
+                    mock.patch.object(scrape, "METADATA_PATH", metadata_path), \
+                    mock.patch.object(scrape, "INDEX_PATH", Path(directory) / "index.html"):
+                await scrape.main()
+
+            record = json.loads(output_path.read_text(encoding="utf-8"))[0]
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(metadata["generatedAt"], "2026-11-08T04:30:00Z")
+        self.assertEqual(record["championshipDate"], "September 11, 2026")
+        self.assertEqual(record["daysAsChampion"], 58)
+        self.assertEqual(record["lastDefenseDate"], "September 18, 2026")
+        self.assertEqual(record["daysSinceLastDefense"], 51)
 
 
 
