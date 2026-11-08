@@ -8,7 +8,7 @@ const scan = workflow.match(/^ +semgrep scan .+$/m)?.[0] ?? '';
 const configs = [...scan.matchAll(/--config=(\S+)/g)].map(match => match[1]);
 
 test('SAST keeps its required check name', () => {
-  assert.match(workflow, /^  sast:\n    name: SAST$/m);
+  assert.match(workflow, /^ {2}sast:\n {4}name: SAST$/m);
 });
 
 test('SAST runs code-analysis rules for TypeScript, Python and GitHub Actions', () => {
