@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Iterable
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -174,20 +173,6 @@ async def new_page(browser: Browser):
     )
     page = await context.new_page()
     page.set_default_timeout(30_000)
-    return context, page
-
-
-async def new_cagematch_page(browser: Browser):
-    context, page = await new_page(browser)
-
-    async def route_handler(route):
-        if route.request.resource_type in {"image", "font", "media", "stylesheet"}:
-            await route.abort()
-        else:
-            await route.continue_()
-
-    await page.route("**/*", route_handler)
-    page.set_default_timeout(15_000)
     return context, page
 
 
@@ -435,47 +420,6 @@ def find_title_url(soup: BeautifulSoup, title_name: str) -> str:
     return ""
 
 
-def extract_cagematch_title_links(soup: BeautifulSoup) -> list[tuple[str, str]]:
-    links: list[tuple[str, str]] = []
-    seen: set[str] = set()
-
-    # Cagematch title rows link to pages like ?id=5&nr=20. Keep WWE title-ish
-    # rows and skip retired date ranges later through fuzzy matching.
-    for anchor in soup.find_all("a", href=True):
-        href = anchor["href"]
-        text = title_to_display(anchor.get_text(" ", strip=True))
-        if not text or "id=5" not in href:
-            continue
-
-        normalized = normalize_text(text)
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        links.append((text, urljoin("https://www.cagematch.net/", href)))
-
-    return links
-
-
-def parse_cagematch_title_page(html: str, title_name: str, url: str) -> CagematchTitle:
-    soup = BeautifulSoup(html, "html.parser")
-    text = soup.get_text("\n", strip=True)
-    rows = extract_table_rows(soup)
-
-    champion_name = find_labeled_value(text, ["Current champion", "Current Champions", "Champion"])
-    championship_date = find_date_after_labels(rows, ["Won", "Date", "Since"])
-    days_as_champion = find_days_as_champion(text)
-    last_defense_date = find_last_defense_date(rows, text)
-
-    return CagematchTitle(
-        title_name=title_to_display(title_name),
-        champion_name=champion_name or "",
-        championship_date=display_date(championship_date),
-        days_as_champion=days_as_champion,
-        last_defense_date=display_date(last_defense_date),
-        cagematch_url=url,
-    )
-
-
 def extract_table_rows(soup: BeautifulSoup) -> list[list[str]]:
     rows: list[list[str]] = []
     for tr in soup.find_all("tr"):
@@ -483,65 +427,6 @@ def extract_table_rows(soup: BeautifulSoup) -> list[list[str]]:
         if any(cells):
             rows.append(cells)
     return rows
-
-
-def find_labeled_value(text: str, labels: Iterable[str]) -> str | None:
-    for label in labels:
-        pattern = rf"{re.escape(label)}\s*:?\s*([^\n]+)"
-        match = re.search(pattern, text, flags=re.IGNORECASE)
-        if match:
-            return match.group(1).strip()
-    return None
-
-
-def find_date_after_labels(rows: list[list[str]], labels: Iterable[str]) -> str | None:
-    for row in rows:
-        joined = " | ".join(row)
-        if not any(label.lower() in joined.lower() for label in labels):
-            continue
-        for cell in row:
-            parsed = parse_date(cell)
-            if parsed:
-                return cell
-
-    for row in rows:
-        for cell in row:
-            parsed = parse_date(cell)
-            if parsed and 1950 <= parsed.year <= datetime.now().year:
-                return cell
-    return None
-
-
-def find_days_as_champion(text: str) -> int | None:
-    patterns = [
-        r"(\d+)\s+days?\s+as\s+champion",
-        r"days\s*:?\s*(\d+)",
-        r"reign\s*:?\s*(\d+)\s+days?",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, flags=re.IGNORECASE)
-        if match:
-            return int(match.group(1))
-    return None
-
-
-def find_last_defense_date(rows: list[list[str]], text: str) -> str | None:
-    if re.search(r"no\s+title\s+defen[cs]es", text, flags=re.IGNORECASE):
-        return None
-
-    dated_rows: list[date] = []
-    for row in rows:
-        joined = " ".join(row)
-        if not re.search(r"defen[cs]e|defended|retained", joined, flags=re.IGNORECASE):
-            continue
-        for cell in row:
-            parsed = parse_date(cell)
-            if parsed:
-                dated_rows.append(parsed)
-
-    if not dated_rows:
-        return None
-    return max(dated_rows).strftime("%B %-d, %Y")
 
 
 def match_cagematch(wwe: WweChampion, cagematch_titles: list[CagematchTitle]) -> CagematchTitle | None:
