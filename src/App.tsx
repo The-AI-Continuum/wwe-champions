@@ -7,7 +7,7 @@ import { ChampionCard } from './ChampionCard';
 import { ChampionDirectory } from './ChampionDirectory';
 
 
-type CacheMetadata = {
+type SnapshotMetadata = {
   generatedAt: string;
 };
 
@@ -18,7 +18,7 @@ type LoadState =
   | { status: 'error'; message: string };
 
 
-function isCacheMetadata(value: unknown): value is CacheMetadata {
+function isSnapshotMetadata(value: unknown): value is SnapshotMetadata {
   if (!value || typeof value !== 'object') return false;
   const generatedAt = (value as Record<string, unknown>).generatedAt;
   return typeof generatedAt === 'string' && !Number.isNaN(Date.parse(generatedAt));
@@ -141,7 +141,7 @@ export function App() {
             }, 10_000);
           }),
         ]);
-        return isCacheMetadata(metadata) ? metadata.generatedAt : null;
+        return isSnapshotMetadata(metadata) ? metadata.generatedAt : null;
       } catch {
         return null;
       } finally {

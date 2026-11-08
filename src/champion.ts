@@ -8,7 +8,7 @@ export type Champion = {
   daysAsChampion: number | null;
   lastDefenseDate: string | null;
   daysSinceLastDefense: number | null;
-  /** Absent in caches written before the status existed; see resolveDefense. */
+  /** Absent in snapshots written before the status existed; see resolveDefense. */
   defenseStatus?: DefenseStatus;
   source?: {
     wweUrl?: string;
@@ -73,7 +73,7 @@ function usableDays(value: unknown): number | null {
 }
 
 /**
- * Normalize a cache record to one defense state. Never infers "none" from missing,
+ * Normalize a champion record to one defense state. Never infers "none" from missing,
  * contradictory, or legacy data: before `defenseStatus` existed the text
  * "No Title Defenses Yet" was also written for failed and unmatched lookups, so it
  * and any other undated legacy record is unavailable. Only an explicit `none` with no
