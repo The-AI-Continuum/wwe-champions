@@ -127,13 +127,26 @@ class BuildSnapshotTests(unittest.IsolatedAsyncioTestCase):
 
     def current_record(self) -> dict:
         return {
-            "titleName": "Undisputed WWE Championship",
+            "titleName": "Undisputed WWE Champion",
             "championName": "Sami Zayn",
             "championshipDate": "September 11, 2026",
             "daysAsChampion": 58,
             "source": {
                 "wweUrl": "https://www.wwe.com/superstars/sami-zayn",
                 "cagematchUrl": self.title_url,
+            },
+        }
+
+    def second_title_record(self) -> dict:
+        return {
+            "titleName": "WWE Women’s Champion",
+            "championName": "Tiffany Stratton",
+            "championshipDate": "November 7, 2026",
+            "daysAsChampion": 0,
+            "defenseStatus": "none",
+            "source": {
+                "wweUrl": "https://www.wwe.com/superstars/tiffany-stratton",
+                "cagematchUrl": "https://www.cagematch.net/?id=5&nr=2906",
             },
         }
 
@@ -205,6 +218,56 @@ class BuildSnapshotTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(built["defenseStatus"], expected_status)
                 self.assertEqual(built["lastDefenseDate"], expected_date)
                 self.assertEqual(built["daysSinceLastDefense"], expected_days)
+
+    async def test_empty_or_unavailable_wwe_listing_is_a_refusal_naming_every_current_title(self):
+        current_snapshot = [self.current_record(), self.second_title_record()]
+        for description, wwe_html in [
+            ("interstitial", "<html><body>Just a moment...</body></html>"),
+            ("unavailable", None),
+        ]:
+            with self.subTest(description):
+                pages = self.pages()
+                if wwe_html is None:
+                    del pages[self.wwe_url]
+                else:
+                    pages[self.wwe_url] = wwe_html
+                result = await build_snapshot(RecordedPageFetcher(pages), current_snapshot, date(2026, 11, 7))
+
+                self.assertIsNone(result.snapshot)
+                self.assertEqual(result.refusal.missing_titles, ["Undisputed WWE Champion", "WWE Women’s Champion"])
+                self.assertIn("WWE Women’s Champion", result.refusal.message)
+
+    async def test_empty_wwe_listing_is_a_refusal_even_without_a_current_snapshot(self):
+        pages = self.pages()
+        pages[self.wwe_url] = "<html><body>Just a moment...</body></html>"
+        result = await build_snapshot(RecordedPageFetcher(pages), [], date(2026, 11, 7))
+
+        self.assertIsNone(result.snapshot)
+        self.assertIsNotNone(result.refusal)
+        self.assertEqual(result.refusal.missing_titles, [])
+
+    async def test_listing_missing_a_current_title_is_a_refusal_naming_exactly_it(self):
+        result = await build_snapshot(
+            RecordedPageFetcher(self.pages()),
+            [self.current_record(), self.second_title_record()],
+            date(2026, 11, 7),
+        )
+
+        self.assertIsNone(result.snapshot)
+        self.assertEqual(result.refusal.missing_titles, ["WWE Women’s Champion"])
+        self.assertIn("WWE Women’s Champion", result.refusal.message)
+        self.assertNotIn("Undisputed", result.refusal.message)
+
+    async def test_accepted_retired_title_is_left_out_of_the_new_snapshot(self):
+        result = await build_snapshot(
+            RecordedPageFetcher(self.pages()),
+            [self.current_record(), self.second_title_record()],
+            date(2026, 11, 7),
+            accepted_titles=["WWE Women's Champion"],
+        )
+
+        self.assertIsNone(result.refusal)
+        self.assertEqual([record["titleName"] for record in result.snapshot], ["Undisputed WWE Champion"])
 
 
 

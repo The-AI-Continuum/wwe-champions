@@ -5,7 +5,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import date
 from difflib import SequenceMatcher
-from typing import Protocol
+from typing import Collection, Protocol
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -72,10 +72,26 @@ class DefenseLookup:
 
 
 @dataclass
+class Refusal:
+    """A refresh outcome that leaves the current snapshot exactly as it was."""
+
+    missing_titles: list[str]
+
+    @property
+    def message(self) -> str:
+        if not self.missing_titles:
+            return "Refusal: the WWE.com champion listing was unavailable or listed no champions."
+        return "Refusal: the WWE.com champion listing is missing current titles: " + "; ".join(self.missing_titles) + "."
+
+    def __str__(self) -> str:
+        return self.message
+
+
+@dataclass
 class RefreshResult:
     snapshot: list[dict] | None
     fallbacks: list[str] = field(default_factory=list)
-    refusal: object | None = None
+    refusal: Refusal | None = None
 
 
 def normalize_text(value: str | None) -> str:
@@ -341,7 +357,7 @@ class RecordedPageFetcher:
         return self.pages.get(url)
 
 
-async def build_snapshot(page_fetcher: PageFetcher, current_snapshot: list[dict], refresh_date: date) -> RefreshResult:
+async def build_snapshot(page_fetcher: PageFetcher, current_snapshot: list[dict], refresh_date: date, accepted_titles: Collection[str] = ()) -> RefreshResult:
     fallbacks: list[str] = []
     cagematch_html = await page_fetcher.fetch(CAGEMATCH_TITLES_URL)
     titles: list[CagematchTitle] = []
@@ -368,9 +384,15 @@ async def build_snapshot(page_fetcher: PageFetcher, current_snapshot: list[dict]
                 lookup = parse_defense_from_matches(matches_html)
                 title.defense_status, title.last_defense_date = lookup.status, lookup.date
     wwe_html = await page_fetcher.fetch(WWE_SUPERSTARS_URL)
-    if wwe_html is None:
-        return RefreshResult(None, fallbacks)
-    champions = parse_wwe_champions(wwe_html)
+    champions = parse_wwe_champions(wwe_html) if wwe_html is not None else []
+    listed = {normalize_text(champion.title_name) for champion in champions}
+    accepted = {normalize_text(title) for title in accepted_titles}
+    missing_titles = [
+        str(item["titleName"]) for item in current_snapshot
+        if isinstance(item, dict) and item.get("titleName") and normalize_text(str(item["titleName"])) not in listed | accepted
+    ]
+    if not champions or missing_titles:
+        return RefreshResult(None, fallbacks, Refusal(missing_titles))
     for champion in champions:
         if champion.image_url:
             continue
