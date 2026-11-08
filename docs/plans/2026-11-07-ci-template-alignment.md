@@ -40,7 +40,8 @@ Steps 1 to 3 together cover the "touches only filtered files" fix. Step 4 to 7 c
 
 1. PR A: step 1. Push with `gh-omp-push`, open with `gh-omp-pr`.
 2. PR B: steps 2 to 7. Every `.github/` change requires an approving review from `joshmuthumani` (`OWNER_APPROVER_LOGIN`) before `Binding approval` passes.
-3. After PR B merges, open a throwaway PR that changes only `package-lock.json` or `.gitignore`. Expected: `PR-Agent (external)` finishes as skipped, and `Binding approval` passes. Close it unmerged.
+3. After PR B merges, open a throwaway PR that changes only `package-lock.json` or `.gitignore`. Expected: `PR-Agent (external)` finishes as skipped, and `Binding approval` passes after an eligible human approves it under the organization `main-protection` ruleset. Close it unmerged.
+4. The no-reviewable-files path is intentional for OCR and PR-Agent when their pinned filters exclude every changed file; it is not an auto-merge policy. The organization `main-protection` ruleset still requires one approving review and approval of the latest push. `Dependency audit` detects known advisories; it does not establish lockfile integrity or benign intent.
 
 ## Risks and edge cases
 
