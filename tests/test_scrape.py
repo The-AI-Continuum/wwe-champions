@@ -13,7 +13,7 @@ from scrape import (
     DefenseLookup,
     WweChampion,
     combine_records,
-    existing_cache_as_cagematch_titles,
+    current_snapshot_as_cagematch_titles,
     normalize_defense,
     parse_defense_from_matches,
 )
@@ -182,12 +182,12 @@ class CombineRecordsDefenseTests(unittest.TestCase):
         self.assertEqual(normalize_defense("bogus", "September 18, 2026"), DefenseLookup(DEFENSE_UNAVAILABLE))
 
 
-class ExistingCacheDefenseTests(unittest.TestCase):
-    def read_cache(self, records: list[dict]) -> list[CagematchTitle]:
+class CurrentSnapshotDefenseTests(unittest.TestCase):
+    def read_snapshot(self, records: list[dict]) -> list[CagematchTitle]:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "champions.json"
             path.write_text(json.dumps(records), encoding="utf-8")
-            return existing_cache_as_cagematch_titles(path)
+            return current_snapshot_as_cagematch_titles(path)
 
     def item(self, **overrides) -> dict:
         record = {
@@ -200,31 +200,31 @@ class ExistingCacheDefenseTests(unittest.TestCase):
         return {**record, **overrides}
 
     def test_legacy_no_defense_text_is_ambiguous_and_reads_back_unavailable(self):
-        titles = self.read_cache([self.item(lastDefenseDate="No Title Defenses Yet", daysSinceLastDefense=None)])
+        titles = self.read_snapshot([self.item(lastDefenseDate="No Title Defenses Yet", daysSinceLastDefense=None)])
 
         self.assertEqual(titles[0].defense_status, DEFENSE_UNAVAILABLE)
         self.assertIsNone(titles[0].last_defense_date)
 
     def test_legacy_defense_date_without_status_is_known(self):
-        titles = self.read_cache([self.item(lastDefenseDate="September 18, 2026", daysSinceLastDefense=33)])
+        titles = self.read_snapshot([self.item(lastDefenseDate="September 18, 2026", daysSinceLastDefense=33)])
 
         self.assertEqual(titles[0].defense_status, DEFENSE_KNOWN)
         self.assertEqual(titles[0].last_defense_date, "September 18, 2026")
 
-    def test_explicit_none_survives_a_cache_round_trip(self):
-        titles = self.read_cache([self.item(defenseStatus="none", lastDefenseDate=None, daysSinceLastDefense=None)])
+    def test_explicit_none_survives_a_snapshot_round_trip(self):
+        titles = self.read_snapshot([self.item(defenseStatus="none", lastDefenseDate=None, daysSinceLastDefense=None)])
 
         self.assertEqual(titles[0].defense_status, DEFENSE_NONE)
         self.assertIsNone(titles[0].last_defense_date)
 
-    def test_checked_in_cache_records_without_a_status_never_read_back_as_none(self):
+    def test_checked_in_snapshot_records_without_a_status_never_read_back_as_none(self):
         path = Path("public/champions.json")
         legacy = [
             item
             for item in json.loads(path.read_text(encoding="utf-8"))
             if "defenseStatus" not in item and item["source"].get("cagematchUrl")
         ]
-        titles = existing_cache_as_cagematch_titles(path)
+        titles = current_snapshot_as_cagematch_titles(path)
         statuses = {title.defense_status for title in titles if title.cagematch_url in {i["source"]["cagematchUrl"] for i in legacy}}
 
         self.assertNotIn(DEFENSE_NONE, statuses)
