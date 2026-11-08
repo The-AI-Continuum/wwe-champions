@@ -43,6 +43,9 @@ const expandBraces = glob => {
   const m = glob.match(/\{([^{}]*)\}/);
   return m ? m[1].split(',').flatMap(alt => expandBraces(glob.slice(0, m.index) + alt + glob.slice(m.index + m[0].length))) : [glob];
 };
+// The glob source is the constant OCR_DEFAULT_EXCLUDES list above, never PR or API input, and
+// every non-wildcard character is escaped, so the compiled patterns are fixed and linear.
+// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
 const globToRegExp = glob => new RegExp('^' + glob.split(/(\*\*\/|\/\*\*$|\*)/).map(part =>
   part === '**/' ? '(?:.*/)?' : part === '/**' ? '(?:/.*)?' : part === '*' ? '[^/]*' :
   part.replace(/[.+^${}()|[\]\\]/g, '\\$&')).join('') + '$');
@@ -130,10 +133,12 @@ async function resolveOcrArtifact(github, repo, headSha, checkName = 'Code revie
     // lags the job's run_attempt. Bind it to the selected successful job by upload time.
     const jobStartedAt = Date.parse(job.started_at || '');
     const jobCompletedAt = Date.parse(job.completed_at || '');
-    const artifactNamePattern = new RegExp(`^ocr-review-result-${runId}-[0-9]+$`);
+    const artifactNamePrefix = `ocr-review-result-${runId}-`;
+    const isRunArtifactName = name => typeof name === 'string' && name.startsWith(artifactNamePrefix) &&
+      /^[0-9]+$/.test(name.slice(artifactNamePrefix.length));
     matches = artifacts.filter(value => {
       const createdAt = Date.parse(value.created_at || '');
-      return artifactNamePattern.test(value.name || '') && value.expired === false &&
+      return isRunArtifactName(value.name) && value.expired === false &&
         Number.isFinite(createdAt) && createdAt >= jobStartedAt && createdAt <= jobCompletedAt;
     });
   }
