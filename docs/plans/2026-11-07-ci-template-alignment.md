@@ -4,7 +4,7 @@
 - **Status:** implemented locally on 2026-11-07 (steps 1-7); not pushed, no PR opened. Post-merge throwaway-PR check still open.
 - **Date:** 2026-11-07
 - **Compared against:** `~/Brain/System/templates/github-workflows/` at Brain HEAD (clean tree)
-- **Last repo sync with the template:** `3f81cf0` (2026-10-25, OCR validator) and `f041f66` (2026-10-28, `OWNER_APPROVER_LOGIN`)
+- **Last repo sync with the template:** `3f81cf0` (2026-10-25, OCR validator), `f041f66` (2026-10-28, `OWNER_APPROVER_LOGIN`) and Brain PR #202 / `d8fb9ab` (2026-11-07, JOS-849 SAST code-analysis rulesets)
 
 ## Outcome
 
@@ -33,6 +33,7 @@ Dependencies: step 1 lands first, because `pr-verdict.yml` runs from the default
 | 5 | Pin every `uses:` to the template's commit SHA with a version comment. For `work-item-link.yml` use the template's `github-script` SHA. | `.github/workflows/{ci,independent-review,pr-verdict,security,work-item-link}.yml` | `fb0886c` | `grep -rnE 'uses: [^ ]+@v[0-9]' .github/workflows` returns nothing. |
 | 6 | Remove the disabled refresh workflow. The README already says the refresh runs locally and GitHub holds no GH-OMP credentials. | `.github/workflows/refresh-data.yml` (delete) | README "Generate Champion Data" | `gh api repos/The-AI-Continuum/wwe-champions/actions/workflows --jq '.workflows[] \| select(.path \| endswith("refresh-data.yml"))'` returns nothing after merge. |
 | 7 | Bring `docs/keys.md` current: add `OWNER_APPROVER_LOGIN`, replace "the repository owner must approve", add a last-verified date, and add destination and canonical-source tables. | `docs/keys.md` | `System/templates/keys.md` | Every variable read by a workflow (`grep -rhoE 'vars\.[A-Z_]+' .github/workflows \| sort -u`) appears in `docs/keys.md`. |
+| 8 | SAST runs Semgrep code-analysis rules (`p/default`, `p/typescript`, `p/python`, `p/github-actions`) instead of `p/secrets` (JOS-849). Fix the regex finding in the OCR validator; suppress the two true false positives with targeted `nosemgrep` comments. | `.github/workflows/security.yml`, `.github/scripts/validate-ocr-result.cjs`, `.github/workflows/pr-verdict.yml` | Brain PR #202 (`d8fb9ab`) | `diff` each file against the template: only the intentional rows above. The local Semgrep run with the pinned image exits 0. |
 
 Steps 1 to 3 together cover the "touches only filtered files" fix. Step 4 to 7 can ship in the same PR as step 2 and 3, or separately.
 

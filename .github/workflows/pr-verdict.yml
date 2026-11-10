@@ -37,13 +37,17 @@ jobs:
           set -euo pipefail
           # A value *derived* from a secret is a new string the runner has never seen, so it
           # is not auto-masked -- and create-github-app-token logs its `with:` inputs. Collapse
-          # the PEM to a single line of literal \n escapes (::add-mask:: only masks single-line
-          # values), mask it before anything else, then emit it; the action's private-key input
-          # un-escapes \n back to real newlines.
-          # tr -d '\r' first: ::add-mask:: treats a CR as a line terminator, so a CRLF-sourced
+          # the PEM to a single line of literal \n escapes (the add-mask command only masks
+          # single-line values), mask it before anything else, then emit it; the action's
+          # private-key input un-escapes \n back to real newlines.
+          # tr -d '\r' first: add-mask treats a CR as a line terminator, so a CRLF-sourced
           # PEM would register a mask truncated at the first CR while the full key still
           # reached $GITHUB_OUTPUT and the with: block the runner logs for the next step.
           private_key="$(printf '%s' "$PRIVATE_KEY_B64" | base64 --decode | tr -d '\r' | awk 'BEGIN{ORS="\\n"}{print}')"
+          # The audit rule flags every add-mask because a workflow that stops command processing
+          # can defeat it. This job runs from the default branch (workflow_run) in the
+          # main-only binding-approval environment and never runs PR code, so no PR can.
+          # nosemgrep: yaml.github-actions.security.audit.unsafe-add-mask-workflow-command.unsafe-add-mask-workflow-command
           printf '%s\n' "::add-mask::${private_key}"
           case "$private_key" in
             '-----BEGIN '*'PRIVATE KEY-----'*) ;;
