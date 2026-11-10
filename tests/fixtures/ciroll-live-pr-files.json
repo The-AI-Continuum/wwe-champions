@@ -1,0 +1,18 @@
+[
+  {
+    "filename": "src/legacy/removedHelper.ts",
+    "status": "removed",
+    "additions": 0,
+    "deletions": 4,
+    "changes": 4,
+    "patch": "@@ -1,4 +0,0 @@\n-export function legacyChampionLabel(name: string): string {\n-  return name.trim().toUpperCase();\n-}\n-"
+  },
+  {
+    "filename": "package-lock.json",
+    "status": "modified",
+    "additions": 1,
+    "deletions": 1,
+    "changes": 2,
+    "patch": "@@ -1,5 +1,5 @@\n {\n   \"name\": \"synthetic-fixture\",\n-  \"lockfileVersion\": 3,\n+  \"lockfileVersion\": 3.0,\n   \"requires\": true\n }"
+  }
+]
