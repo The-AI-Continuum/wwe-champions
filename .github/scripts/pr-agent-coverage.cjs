@@ -45,8 +45,14 @@ const AUTO_GENERATED_NAMES = new Set([
 ]);
 const AUTO_GENERATED_SUFFIXES = ['.min.js', '.min.css', '.js.map', '.ts.map', '.css.map'];
 
+// Other lockfile formats that may be moved to a filtered destination.
+const ADDITIONAL_LOCKFILE_NAMES = new Set([
+  'npm-shrinkwrap.json', 'Package.resolved', 'Cartfile.resolved',
+  'gradle.lockfile', 'packages.lock.json', 'go.work.sum',
+]);
+
 // [ignore].glob, translated the way fnmatch.translate() does for `vendor/**`.
-const IGNORED_PATH_PATTERNS = [/^vendor\/.*$/];
+const IGNORED_PATH_PATTERNS = [/^vendor\/[\s\S]*$/];
 
 function basename(filePath) {
   return String(filePath).replace(/\\/g, '/').split('/').pop();
@@ -59,7 +65,7 @@ function filterReason(filename) {
   const name = basename(filename);
   if (AUTO_GENERATED_NAMES.has(name)) return 'auto-generated';
   if (AUTO_GENERATED_SUFFIXES.some((suffix) => filename.endsWith(suffix))) return 'auto-generated';
-  if (IGNORED_PATH_PATTERNS.some((pattern) => pattern.test(filename.replace(/\\/g, '/')))) {
+  if (IGNORED_PATH_PATTERNS.some((pattern) => pattern.test(filename))) {
     return 'ignored-path';
   }
   const extension = filename.split('.').pop();
@@ -71,16 +77,17 @@ function isReviewablePath(filename) {
   return filterReason(filename) === null;
 }
 
-// No reviewer inspects lockfile content (PR-Agent and OCR both exclude it), so a
-// skipped review of a PR that touches one needs a human approver.
+// Skipped review of a PR touching a lockfile needs a human approver. Treat
+// every .lock and .lockb file conservatively, including dependency-manager variants.
 function isLockfilePath(filename) {
   if (!filename) return false;
   const name = basename(filename);
-  return AUTO_GENERATED_NAMES.has(name) || name === 'npm-shrinkwrap.json';
+  return name.endsWith('.lock') || name.endsWith('.lockb') ||
+    AUTO_GENERATED_NAMES.has(name) || ADDITIONAL_LOCKFILE_NAMES.has(name);
 }
 
 // `files` are GitHub pull request file objects: { filename, status }.
-// Deleted files carry no content for PR-Agent, so they are never reviewable.
+// Removed files can still have reviewable deletion patches.
 function classifyPrFiles(files) {
   if (!Array.isArray(files)) throw new TypeError('classifyPrFiles expects the GitHub file list');
 
@@ -90,7 +97,6 @@ function classifyPrFiles(files) {
   for (const file of files) {
     const filename = file && file.filename;
     if (!filename || typeof filename !== 'string') throw new Error('Pull request file entry has no filename');
-    if (file.status === 'removed') continue;
     changed.push(filename);
     const reason = filterReason(filename);
     if (reason === null) reviewable.push(filename);
