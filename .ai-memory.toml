@@ -1,0 +1,15 @@
+# Local AI Memory capture allowlist, enabled 2026-11-10.
+workspace = "personal"
+project = "wwe-champions"
+project_strategy = "repo-root"
+
+[briefing]
+inject_on_session_start = "true"
+max_chars = 4000
+
+[profile]
+contribute = false
+consume = false
+
+[capture]
+ignore_paths = [".env", ".env.*", "**/.env", "**/.env.*", "**/*.pem", "**/*.key"]
