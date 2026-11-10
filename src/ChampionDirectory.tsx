@@ -55,7 +55,7 @@ export function ChampionDirectory({
       champions.map((champion) => ({
         champion,
         family: familyOf(champion.titleName),
-        haystack: normalize(`${champion.championName}\n${champion.titleName}`),
+        haystack: normalize(`${champion.championName ?? ''}\n${champion.titleName}`),
       })),
     [champions],
   );
@@ -167,7 +167,7 @@ export function ChampionDirectory({
           className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
         >
           {visible.map(({ champion }) => (
-            <Fragment key={`${champion.titleName}-${champion.championName}`}>
+            <Fragment key={`${champion.titleName}-${champion.championName ?? 'vacant'}`}>
               {renderChampion(champion)}
             </Fragment>
           ))}

@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { validateOcrResult, resolveOcrArtifact } = require('../.github/scripts/validate-ocr-result.cjs');
+const { validateOcrResult, resolveOcrArtifact, OCR_PINNED_MODEL } = require('../.github/scripts/validate-ocr-result.cjs');
 
 const head = 'a'.repeat(40);
 const selectedFile = {
@@ -17,7 +17,7 @@ function completeResult(overrides = {}) {
       schema_version: 'ocr.run-manifest/v1',
       operation: 'review',
       input: { resolved_head: head },
-      execution: { model: 'qwen/qwen3-coder-flash' },
+      execution: { model: OCR_PINNED_MODEL },
       coverage: {
         selected: [selectedFile],
         completed: [selectedFile],
@@ -26,7 +26,7 @@ function completeResult(overrides = {}) {
         waived: [],
       },
     },
-    llm: { model: 'qwen/qwen3-coder-flash' },
+    llm: { model: OCR_PINNED_MODEL },
     warnings: [],
     ...overrides,
   };
@@ -50,6 +50,33 @@ test('rejects evidence for a different current head', () => {
     () => validateOcrResult(completeResult(), 'c'.repeat(40), ['src/App.tsx']),
     /reviewed SHA does not match the current PR head/,
   );
+});
+
+test('rejects otherwise valid evidence from the retired Qwen Flash model', () => {
+  const retired = 'qwen/qwen3-coder-flash';
+  assert.notEqual(retired, OCR_PINNED_MODEL);
+  const result = completeResult();
+  result.manifest.execution.model = retired;
+  result.llm.model = retired;
+  assert.throws(
+    () => validateOcrResult(result, head, ['src/App.tsx']),
+    /effective review model is not the pinned Qwen model/,
+  );
+});
+
+test('rejects evidence whose execution model differs from the effective LLM model', () => {
+  for (const [execution, llm] of [
+    [OCR_PINNED_MODEL, 'qwen/qwen3-coder-flash'],
+    ['qwen/qwen3-coder-flash', OCR_PINNED_MODEL],
+  ]) {
+    const result = completeResult();
+    result.manifest.execution.model = execution;
+    result.llm.model = llm;
+    assert.throws(
+      () => validateOcrResult(result, head, ['src/App.tsx']),
+      /effective review model is not the pinned Qwen model/,
+    );
+  }
 });
 
 test('rejects failed or waived selected coverage', () => {
@@ -77,17 +104,19 @@ function skippedResult() {
   return result;
 }
 
-// CI explicitly selects tests and fixtures, so OCR omitting one must block rather than
-// be treated as a file OCR's built-in filter never reviews.
-const explicitlyIncludedPaths = [
+// Reviewable test and fixture paths omitted by OCR must block, including
+// extensionless paths for which the CI include override cannot bypass defaults.
+const reviewableTestPaths = [
   'tests/ocr-validator.test.cjs',
   'test/auth.test.ts',
   'src/__tests__/a.js',
   'tests/fixtures/data.json',
   'pkg/foo_test.go',
+  'tests/fixtures/Makefile',
+  'tests/fixtures/.config',
 ];
 
-for (const changed of explicitlyIncludedPaths) {
+for (const changed of reviewableTestPaths) {
   test(`rejects ${changed} omitted from a skipped or partial review`, () => {
     assert.throws(() => validateOcrResult(skippedResult(), head, [changed]), /was not selected for review/);
     assert.throws(
@@ -105,6 +134,50 @@ test('accepts a test file and a fixture that OCR selected and completed', () => 
   result.manifest.coverage.completed = [selectedFile, testFile, fixture];
   const verdict = validateOcrResult(result, head, ['src/App.tsx', testFile.path, fixture.path]);
   assert.equal(verdict.selectedFiles, 3);
+});
+
+test('workflow OCR rules include supported tests and fixtures without overriding other exclusions', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { spawnSync } = require('node:child_process');
+  const { isUnreviewablePath } = require('../.github/scripts/validate-ocr-result.cjs');
+  const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/ci.yml'), 'utf8');
+  const step = workflow.match(/ {6}- name: Select all reviewable changes, including tests and fixtures\n(?:.*\n)*? {8}run: \|\n((?: {10}.*\n)+)/);
+  assert.ok(step, 'OCR selection step is missing');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocr-rules-'));
+  try {
+    const run = spawnSync('bash', ['-ec', step[1].replace(/^ {10}/gm, '')], {
+      env: { ...process.env, RUNNER_TEMP: dir }, encoding: 'utf8',
+    });
+    assert.equal(run.status, 0, run.stderr);
+    const rules = JSON.parse(fs.readFileSync(path.join(dir, 'ocr-ci-rules.json'), 'utf8'));
+    const expand = glob => {
+      const match = glob.match(/\{([^{}]*)\}/);
+      return match ? match[1].split(',').flatMap(part => expand(glob.replace(match[0], part))) : [glob];
+    };
+    const matches = (patterns, file) => patterns.flatMap(expand).some(glob => {
+      const regex = glob.toLowerCase().split(/(\*\*\/|\/\*\*$|\*)/).map(part =>
+        part === '**/' ? '(?:.*/)?' : part === '/**' ? '(?:/.*)?' : part === '*' ? '[^/]*' :
+          part.replace(/[.+^${}()|[\]\\]/g, '\\$&')).join('');
+      return new RegExp(`^${regex}$`).test(file.toLowerCase());
+    });
+    for (const file of ['pkg/foo_test.go', 'src/__tests__/a.js', 'tests/fixtures/data.json', 'tests/fixtures/page.html']) {
+      assert.equal(matches(rules.include, file), true, file);
+      assert.equal(matches(rules.exclude, file), false, file);
+      assert.equal(isUnreviewablePath(file), false, file);
+    }
+    for (const file of ['tests/fixtures/image.png', 'tests/fixtures/readme.md', 'tests/fixtures/archive.zip']) {
+      assert.equal(matches(rules.include, file), false, file);
+      assert.equal(isUnreviewablePath(file), true, file);
+    }
+    for (const file of ['tests/fixtures/package-lock.json', 'tests/fixtures/code.min.js', 'vendor/tests/a_test.go', 'tests/fixtures/schema.pb.go']) {
+      assert.equal(matches(rules.exclude, file), true, file);
+      assert.equal(isUnreviewablePath(file), true, file);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('lockfile-only skipped review is permitted by the explicit no-reviewable-files policy', () => {

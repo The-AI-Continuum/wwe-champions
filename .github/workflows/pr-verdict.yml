@@ -246,7 +246,7 @@ jobs:
               if (!exactCheckNames || evidence.schemaVersion !== 1 || evidence.phase1?.verdict !== 'pass' ||
                   (reviewStatus !== 'completed' && reviewStatus !== 'skipped') ||
                   evidence.externalReview?.verdict !== 'pass' ||
-                  evidence.externalReview?.requestedModel !== 'openrouter/deepseek/deepseek-v4.1-flash-1017' ||
+                  evidence.externalReview?.requestedModel !== 'openrouter/z-ai/glm-5.3-flash' ||
                   evidence.verdict !== 'pass') {
                 verdict.blockReasons.push('External-review evidence does not contain a complete pass.');
               } else {
@@ -320,7 +320,8 @@ jobs:
                         JSON.stringify(recorded.reviewable) !== JSON.stringify(trusted.reviewable)) {
                       throw new Error('Producer coverage does not match the trusted computation');
                     }
-                    lockfileSkip = trusted.filtered.some(entry => isLockfilePath(entry.file));
+                    lockfileSkip = prFileList.some(file =>
+                      [file.filename, file.previous_filename].some(isLockfilePath));
                   } catch {
                     verdict.blockReasons.push('External review recorded empty coverage that this verifier cannot confirm.');
                   }
@@ -334,7 +335,7 @@ jobs:
                   const ownerLogin = process.env.OWNER_APPROVER_LOGIN || context.repo.owner;
                   const ownerReview = reviews.filter(review => review.user?.login === ownerLogin &&
                     review.state !== 'COMMENTED').pop();
-                  if (ownerReview?.state !== 'APPROVED' || ownerReview.commit_id !== evidence.pr.headSha) {
+                  if (ownerReview?.user?.type !== 'User' || ownerReview.state !== 'APPROVED' || ownerReview.commit_id !== evidence.pr.headSha) {
                     if (prFileList.length >= 3000 || prFileList.some(file =>
                         [file.filename, file.previous_filename].some(name => name?.startsWith('.github/')))) {
                       verdict.blockReasons.push(`This PR changes .github/ (workflows or review scripts): ${ownerLogin} must approve the current head, then re-run Independent Review.`);

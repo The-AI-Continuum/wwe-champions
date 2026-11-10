@@ -1,20 +1,20 @@
 import json
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest import mock
+from zoneinfo import ZoneInfo
 
-from scrape import (
+import scrape
+
+from snapshot import (
     DEFENSE_KNOWN,
     DEFENSE_NONE,
     DEFENSE_UNAVAILABLE,
-    CagematchTitle,
     DefenseLookup,
-    WweChampion,
-    combine_records,
-    current_snapshot_as_cagematch_titles,
-    normalize_defense,
+    RecordedPageFetcher,
+    build_snapshot,
     parse_defense_from_matches,
 )
 
@@ -114,120 +114,239 @@ class ParseLastDefenseFromMatchesTests(unittest.TestCase):
                 self.assertEqual(parse_defense_from_matches(html).status, DEFENSE_UNAVAILABLE)
 
 
-def wwe(title: str = "Intercontinental Champion", champion: str = "Penta") -> WweChampion:
-    return WweChampion(champion, title, "https://www.wwe.com/superstars/penta", "")
+class BuildSnapshotTests(unittest.IsolatedAsyncioTestCase):
+    title_index_url = "https://www.cagematch.net/?id=8&nr=1&page=9"
+    title_url = "https://www.cagematch.net/?id=5&nr=20"
+    matches_url = "https://www.cagematch.net/?id=5&nr=20&page=5&reign=155"
+    wwe_url = "https://www.wwe.com/superstars"
 
+    def pages(self, *, title_index_available: bool = True) -> dict[str, str]:
+        fixtures = Path(__file__).parent / "fixtures"
+        pages = {
+            self.title_url: (fixtures / "cagematch-title-detail.html").read_text(encoding="utf-8"),
+            self.matches_url: (fixtures / "cagematch-sami-reign155.html").read_text(encoding="utf-8"),
+            self.wwe_url: (fixtures / "wwe-superstars.html").read_text(encoding="utf-8"),
+        }
+        if title_index_available:
+            pages[self.title_index_url] = (fixtures / "cagematch-titles.html").read_text(encoding="utf-8")
+        return pages
 
-def cagematch(**overrides) -> CagematchTitle:
-    fields = {
-        "title_name": "Intercontinental Championship",
-        "champion_name": "Penta",
-        "championship_date": "August 2, 2026",
-        "days_as_champion": 80,
-        "cagematch_url": "https://www.cagematch.net/?id=5&nr=16",
-    }
-    return CagematchTitle(**{**fields, **overrides})
+    def current_record(self) -> dict:
+        return {
+            "titleName": "Undisputed WWE Champion",
+            "championName": "Sami Zayn",
+            "championshipDate": "September 11, 2026",
+            "daysAsChampion": 58,
+            "source": {
+                "wweUrl": "https://www.wwe.com/superstars/sami-zayn",
+                "cagematchUrl": self.title_url,
+            },
+        }
 
+    def second_title_record(self) -> dict:
+        return {
+            "titleName": "WWE Women’s Champion",
+            "championName": "Tiffany Stratton",
+            "championshipDate": "November 7, 2026",
+            "daysAsChampion": 0,
+            "defenseStatus": "none",
+            "source": {
+                "wweUrl": "https://www.wwe.com/superstars/tiffany-stratton",
+                "cagematchUrl": "https://www.cagematch.net/?id=5&nr=2906",
+            },
+        }
 
-class CombineRecordsDefenseTests(unittest.TestCase):
-    def setUp(self):
-        class SnapshotDate(date):
-            @classmethod
-            def today(cls):
-                return cls(2026, 10, 21)
-        clock = patch("scrape.date", SnapshotDate)
-        clock.start()
-        self.addCleanup(clock.stop)
+    async def test_builds_champion_record_and_normalizes_defense(self):
+        result = await build_snapshot(
+            RecordedPageFetcher(self.pages()),
+            [],
+            date(2026, 11, 7),
+        )
 
-    def record(self, titles: list[CagematchTitle]) -> dict:
-        return combine_records([wwe()], titles)[0]
-
-    def test_known_defense_keeps_date_and_days(self):
-        record = self.record([cagematch(defense_status=DEFENSE_KNOWN, last_defense_date="September 18, 2026")])
-
+        self.assertIsNotNone(result.snapshot)
+        self.assertEqual(result.fallbacks, [])
+        self.assertEqual(len(result.snapshot), 1)
+        record = result.snapshot[0]
+        self.assertEqual(record["titleName"], "Undisputed WWE Champion")
+        self.assertEqual(record["championName"], "Sami Zayn")
+        self.assertEqual(record["championshipDate"], "September 11, 2026")
+        self.assertEqual(record["daysAsChampion"], 57)
         self.assertEqual(record["defenseStatus"], DEFENSE_KNOWN)
         self.assertEqual(record["lastDefenseDate"], "September 18, 2026")
-        self.assertGreater(record["daysSinceLastDefense"], 0)
+        self.assertEqual(record["daysSinceLastDefense"], 50)
+        self.assertEqual(record["source"]["cagematchUrl"], self.title_url)
+        self.assertEqual(record["source"]["wweUrl"], "https://www.wwe.com/superstars/sami-zayn")
 
-    def test_defense_today_preserves_numeric_zero_days(self):
-        today = "October 21, 2026"
-        record = self.record([cagematch(defense_status=DEFENSE_KNOWN, last_defense_date=today)])
+    async def test_unavailable_title_index_uses_current_snapshot_as_titles(self):
+        result = await build_snapshot(
+            RecordedPageFetcher(self.pages(title_index_available=False)),
+            [self.current_record()],
+            date(2026, 11, 7),
+        )
 
-        self.assertEqual(record["daysSinceLastDefense"], 0)
+        self.assertIsNotNone(result.snapshot)
+        self.assertEqual(len(result.snapshot), 1)
+        self.assertEqual(result.snapshot[0]["titleName"], "Undisputed WWE Champion")
+        self.assertEqual(result.snapshot[0]["championName"], "Sami Zayn")
+        self.assertTrue(result.fallbacks)
+        self.assertTrue(any("cagematch" in message.casefold() for message in result.fallbacks))
 
-    def test_confirmed_none_has_no_date_or_days(self):
-        record = self.record([cagematch(defense_status=DEFENSE_NONE)])
+    async def test_cache_fallback_recounts_reign_length_from_the_reign_start_date(self):
+        record = self.current_record()
+        record["championshipDate"] = "August 2, 2026"
+        record["daysAsChampion"] = 80
+        result = await build_snapshot(
+            RecordedPageFetcher(self.pages(title_index_available=False)),
+            [record],
+            date(2026, 11, 7),
+        )
 
-        self.assertEqual(record["defenseStatus"], DEFENSE_NONE)
-        self.assertIsNone(record["lastDefenseDate"])
-        self.assertIsNone(record["daysSinceLastDefense"])
+        self.assertEqual(result.snapshot[0]["championshipDate"], "August 2, 2026")
+        self.assertEqual(result.snapshot[0]["daysAsChampion"], 97)
 
-    def test_failed_lookup_is_unavailable(self):
-        record = self.record([cagematch()])
+    async def test_missing_match_page_leaves_defense_unavailable(self):
+        pages = self.pages()
+        del pages[self.matches_url]
+        result = await build_snapshot(RecordedPageFetcher(pages), [], date(2026, 11, 7))
 
-        self.assertEqual(record["defenseStatus"], DEFENSE_UNAVAILABLE)
-        self.assertIsNone(record["lastDefenseDate"])
-        self.assertIsNone(record["daysSinceLastDefense"])
+        self.assertEqual(result.snapshot[0]["defenseStatus"], DEFENSE_UNAVAILABLE)
+        self.assertIsNone(result.snapshot[0]["lastDefenseDate"])
+        self.assertIsNone(result.snapshot[0]["daysSinceLastDefense"])
 
-    def test_unmatched_title_is_unavailable_without_a_cagematch_source(self):
-        record = self.record([cagematch(title_name="Completely Different Championship", champion_name="Someone Else")])
-
-        self.assertEqual(record["defenseStatus"], DEFENSE_UNAVAILABLE)
-        self.assertIsNone(record["lastDefenseDate"])
-        self.assertEqual(record["source"]["cagematchUrl"], "")
-
-    def test_inconsistent_status_and_date_never_becomes_none(self):
-        self.assertEqual(normalize_defense(DEFENSE_NONE, "September 18, 2026"), DefenseLookup(DEFENSE_UNAVAILABLE))
-        self.assertEqual(normalize_defense(DEFENSE_KNOWN, None), DefenseLookup(DEFENSE_UNAVAILABLE))
-        self.assertEqual(normalize_defense("bogus", "September 18, 2026"), DefenseLookup(DEFENSE_UNAVAILABLE))
-
-
-class CurrentSnapshotDefenseTests(unittest.TestCase):
-    def read_snapshot(self, records: list[dict]) -> list[CagematchTitle]:
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "champions.json"
-            path.write_text(json.dumps(records), encoding="utf-8")
-            return current_snapshot_as_cagematch_titles(path)
-
-    def item(self, **overrides) -> dict:
-        record = {
-            "titleName": "Intercontinental Champion",
-            "championName": "Penta",
-            "championshipDate": "August 2, 2026",
-            "daysAsChampion": 80,
-            "source": {"wweUrl": "https://www.wwe.com/superstars/penta", "cagematchUrl": "https://www.cagematch.net/?id=5&nr=16"},
-        }
-        return {**record, **overrides}
-
-    def test_legacy_no_defense_text_is_ambiguous_and_reads_back_unavailable(self):
-        titles = self.read_snapshot([self.item(lastDefenseDate="No Title Defenses Yet", daysSinceLastDefense=None)])
-
-        self.assertEqual(titles[0].defense_status, DEFENSE_UNAVAILABLE)
-        self.assertIsNone(titles[0].last_defense_date)
-
-    def test_legacy_defense_date_without_status_is_known(self):
-        titles = self.read_snapshot([self.item(lastDefenseDate="September 18, 2026", daysSinceLastDefense=33)])
-
-        self.assertEqual(titles[0].defense_status, DEFENSE_KNOWN)
-        self.assertEqual(titles[0].last_defense_date, "September 18, 2026")
-
-    def test_explicit_none_survives_a_snapshot_round_trip(self):
-        titles = self.read_snapshot([self.item(defenseStatus="none", lastDefenseDate=None, daysSinceLastDefense=None)])
-
-        self.assertEqual(titles[0].defense_status, DEFENSE_NONE)
-        self.assertIsNone(titles[0].last_defense_date)
-
-    def test_checked_in_snapshot_records_without_a_status_never_read_back_as_none(self):
-        path = Path("public/champions.json")
-        legacy = [
-            item
-            for item in json.loads(path.read_text(encoding="utf-8"))
-            if "defenseStatus" not in item and item["source"].get("cagematchUrl")
+    async def test_current_snapshot_defense_facts_are_normalized(self):
+        cases = [
+            (None, "September 18, 2026", DEFENSE_KNOWN, "September 18, 2026", 50),
+            (DEFENSE_NONE, None, DEFENSE_NONE, None, None),
+            (DEFENSE_NONE, "September 18, 2026", DEFENSE_UNAVAILABLE, None, None),
+            (DEFENSE_KNOWN, "No Title Defenses Yet", DEFENSE_UNAVAILABLE, None, None),
+            (DEFENSE_KNOWN, "November 7, 2026", DEFENSE_KNOWN, "November 7, 2026", 0),
         ]
-        titles = current_snapshot_as_cagematch_titles(path)
-        statuses = {title.defense_status for title in titles if title.cagematch_url in {i["source"]["cagematchUrl"] for i in legacy}}
+        for status, defense_date, expected_status, expected_date, expected_days in cases:
+            with self.subTest(status=status, defense_date=defense_date):
+                record = self.current_record()
+                record["lastDefenseDate"] = defense_date
+                if status is not None:
+                    record["defenseStatus"] = status
+                result = await build_snapshot(
+                    RecordedPageFetcher(self.pages(title_index_available=False)),
+                    [record],
+                    date(2026, 11, 7),
+                )
 
-        self.assertNotIn(DEFENSE_NONE, statuses)
+                built = result.snapshot[0]
+                self.assertEqual(built["defenseStatus"], expected_status)
+                self.assertEqual(built["lastDefenseDate"], expected_date)
+                self.assertEqual(built["daysSinceLastDefense"], expected_days)
+
+    async def test_empty_or_unavailable_wwe_listing_is_a_refusal_naming_every_current_title(self):
+        current_snapshot = [self.current_record(), self.second_title_record()]
+        for description, wwe_html in [
+            ("interstitial", "<html><body>Just a moment...</body></html>"),
+            ("unavailable", None),
+        ]:
+            with self.subTest(description):
+                pages = self.pages()
+                if wwe_html is None:
+                    del pages[self.wwe_url]
+                else:
+                    pages[self.wwe_url] = wwe_html
+                result = await build_snapshot(RecordedPageFetcher(pages), current_snapshot, date(2026, 11, 7))
+
+                self.assertIsNone(result.snapshot)
+                self.assertEqual(result.refusal.missing_titles, ["Undisputed WWE Champion", "WWE Women’s Champion"])
+                self.assertIn("WWE Women’s Champion", result.refusal.message)
+
+    async def test_empty_wwe_listing_is_a_refusal_even_without_a_current_snapshot(self):
+        pages = self.pages()
+        pages[self.wwe_url] = "<html><body>Just a moment...</body></html>"
+        result = await build_snapshot(RecordedPageFetcher(pages), [], date(2026, 11, 7))
+
+        self.assertIsNone(result.snapshot)
+        self.assertIsNotNone(result.refusal)
+        self.assertEqual(result.refusal.missing_titles, [])
+
+    async def test_listing_missing_a_current_title_is_a_refusal_naming_exactly_it(self):
+        result = await build_snapshot(
+            RecordedPageFetcher(self.pages()),
+            [self.current_record(), self.second_title_record()],
+            date(2026, 11, 7),
+        )
+
+        self.assertIsNone(result.snapshot)
+        self.assertEqual(result.refusal.missing_titles, ["WWE Women’s Champion"])
+        self.assertIn("WWE Women’s Champion", result.refusal.message)
+        self.assertNotIn("Undisputed", result.refusal.message)
+
+    async def test_accepted_retired_title_is_left_out_of_the_new_snapshot(self):
+        result = await build_snapshot(
+            RecordedPageFetcher(self.pages()),
+            [self.current_record(), self.second_title_record()],
+            date(2026, 11, 7),
+            accepted_titles=["WWE Women's Champion"],
+        )
+
+        self.assertIsNone(result.refusal)
+        self.assertEqual([record["titleName"] for record in result.snapshot], ["Undisputed WWE Champion"])
+
+
+class EveningRefreshClock(datetime):
+    """A refresh at 20:30 on November 7 in Los Angeles, which is already November 8 in UTC."""
+
+    instant = datetime(2026, 11, 8, 4, 30, tzinfo=timezone.utc)
+
+    @classmethod
+    def now(cls, tz=None):
+        if tz is None:
+            return cls.instant.astimezone(ZoneInfo("America/Los_Angeles")).replace(tzinfo=None)
+        return cls.instant.astimezone(tz)
+
+    @classmethod
+    def today(cls):
+        return cls.now()
+
+
+class FakePlaywright:
+    """Stands in for the browser so the refresh reads recorded pages instead."""
+
+    def __init__(self):
+        self.chromium = self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def launch(self, **options):
+        return self
+
+    async def close(self):
+        pass
+
+
+class RefreshClockTests(unittest.IsolatedAsyncioTestCase):
+    async def test_evening_refresh_counts_days_to_the_utc_date_matching_the_refresh_metadata(self):
+        pages = BuildSnapshotTests().pages()
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "public" / "champions.json"
+            metadata_path = Path(directory) / "public" / "metadata.json"
+            with mock.patch.object(scrape, "datetime", EveningRefreshClock), \
+                    mock.patch.object(scrape, "async_playwright", FakePlaywright), \
+                    mock.patch.object(scrape, "LivePageFetcher", lambda browser: RecordedPageFetcher(pages)), \
+                    mock.patch.object(scrape, "OUTPUT_PATH", output_path), \
+                    mock.patch.object(scrape, "METADATA_PATH", metadata_path), \
+                    mock.patch.object(scrape, "INDEX_PATH", Path(directory) / "index.html"):
+                await scrape.main()
+
+            record = json.loads(output_path.read_text(encoding="utf-8"))[0]
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(metadata["generatedAt"], "2026-11-08T04:30:00Z")
+        self.assertEqual(record["championshipDate"], "September 11, 2026")
+        self.assertEqual(record["daysAsChampion"], 58)
+        self.assertEqual(record["lastDefenseDate"], "September 18, 2026")
+        self.assertEqual(record["daysSinceLastDefense"], 51)
+
 
 
 if __name__ == "__main__":
