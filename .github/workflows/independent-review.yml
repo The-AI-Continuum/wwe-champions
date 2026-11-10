@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 45
     env:
       # Keep the review model pinned for reproducible review evidence.
-      EXTERNAL_PR_MODEL: openrouter/deepseek/deepseek-v4.1-flash-1017
+      EXTERNAL_PR_MODEL: openrouter/z-ai/glm-5.3-flash
       PR_URL: ${{ inputs.pr_url || github.event.pull_request.html_url }}
     steps:
       - name: Validate mandatory PR-Agent credential
@@ -217,7 +217,71 @@ jobs:
         with:
           python-version: '3.12'
 
-      - run: pip install --quiet pr-agent==0.45.0 # pinned: this job reads the repo and posts to the PR
+      # Reviewed PR-Agent runtime (price-first routing, one approved model, complete responses only),
+      # installed from the trusted default-branch checkout above, never from pull-request code.
+      # Fails closed while the default branch does not carry it yet: land the runtime first
+      # (README, "Reviewed PR-Agent runtime").
+      - name: Install reviewed PR-Agent runtime
+        run: |
+          set -euo pipefail
+          runtime=.github/scripts/pr-agent-runtime
+          if [[ ! -f "$runtime/install.sh" ]]; then
+            echo "::error::The trusted default branch has no $runtime; land the reviewed runtime before this workflow."
+            exit 1
+          fi
+          bash "$runtime/install.sh" "$RUNNER_TEMP/pr-agent-venv"
+          echo "PR_AGENT_PYTHON=$RUNNER_TEMP/pr-agent-venv/bin/python" >> "$GITHUB_ENV"
+
+      # Match the trusted default branch policy used by the workflow_run verdict,
+      # including while a pull request changes the future model pin.
+      - name: Resolve trusted review model
+        id: trusted-model
+        run: |
+          "$PR_AGENT_PYTHON" - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          import yaml
+
+          class UniqueKeyLoader(yaml.SafeLoader):
+              def construct_mapping(self, node, deep=False):
+                  self.flatten_mapping(node)
+                  keys = set()
+                  for key_node, _ in node.value:
+                      key = self.construct_object(key_node, deep=True)
+                      if key in keys:
+                          raise ValueError("Duplicate YAML mapping key")
+                      keys.add(key)
+                  return super().construct_mapping(node, deep=deep)
+
+          source = Path(".github/workflows/independent-review.yml").read_text(encoding="utf-8")
+          workflow = yaml.load(source, Loader=UniqueKeyLoader)
+          model = workflow["jobs"]["pr-agent"]["env"]["EXTERNAL_PR_MODEL"]
+          node = yaml.compose(source, Loader=UniqueKeyLoader)
+          for key in ("jobs", "pr-agent", "env", "EXTERNAL_PR_MODEL"):
+              if not isinstance(node, yaml.MappingNode):
+                  raise ValueError("Trusted model path must contain mappings")
+              matches = [(k, v) for k, v in node.value
+                         if isinstance(k, yaml.ScalarNode) and k.tag == "tag:yaml.org,2002:str" and k.value == key]
+              if len(matches) != 1:
+                  raise ValueError("Trusted model path must be explicit and unique")
+              key_node, node = matches[0]
+          if (not isinstance(node, yaml.ScalarNode) or node.tag != "tag:yaml.org,2002:str"
+                  or node.style not in (None, "'", '"')
+                  or node.start_mark.line != node.end_mark.line
+                  or key_node.end_mark.line != node.start_mark.line
+                  or not re.fullmatch(r":\s*", source[key_node.end_mark.index:node.start_mark.index])):
+              raise ValueError("Trusted model must be a single-line string literal")
+          raw = source[node.start_mark.index:node.end_mark.index]
+          if ((node.style is None and raw != model)
+                  or (node.style is not None and (not raw.startswith(node.style) or not raw.endswith(node.style)))
+                  or not isinstance(model, str)
+                  or not re.fullmatch(r"openrouter/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?", model)):
+              raise ValueError("Trusted model is invalid")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"model={model}\n")
+          PY
 
       # PR-Agent drops bad extensions, lockfiles and minified bundles. A pull
       # request touching only those gets an empty diff and no review comment;
@@ -265,10 +329,15 @@ jobs:
         id: review
         if: steps.phase1.outputs.passed == 'true'
         env:
+          LITELLM_LOCAL_MODEL_COST_MAP: 'True'
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_PR_APPROVER_KEY }}
           OPENROUTER__API_BASE: https://openrouter.ai/api/v1
-          CONFIG__MODEL: ${{ env.EXTERNAL_PR_MODEL }}
-          CONFIG__FALLBACK_MODELS: '[]'
+          CONFIG__MODEL: ${{ steps.trusted-model.outputs.model }}
+          # Dynaconf scalar reset: in pr-agent 0.45 an env list ('[]') merges with the
+          # shipped fallback list, so reset it to empty here and again on the CLI below.
+          CONFIG__FALLBACK_MODELS: ''
+          OPENROUTER__REASONING_EFFORT: low
+          CONFIG__MAX_OUTPUT_TOKENS: '8192'
           # PR-Agent hard-fails on any model absent from its built-in MAX_TOKENS
           # table, and this OpenRouter slug is not in it. Without this the job
           # posts nothing — the exact silent-green this gate exists to prevent.
@@ -283,7 +352,7 @@ jobs:
         # publish nothing without blocking the gate.
         run: |
           set -o pipefail
-          python -m pr_agent.cli --pr_url "$PR_URL" review 2>&1 | tee pr-agent-review.log
+          "$PR_AGENT_PYTHON" -m pr_agent.cli --pr_url "$PR_URL" review '--config.fallback_models=[]' 2>&1 | tee pr-agent-review.log
 
       - name: Build external-review evidence
         id: phase2
@@ -292,7 +361,7 @@ jobs:
         env:
           REVIEW_STARTED_AT: ${{ steps.review-start.outputs.timestamp }}
           REVIEW_OUTCOME: ${{ steps.review.outcome }}
-          REQUESTED_MODEL: ${{ env.EXTERNAL_PR_MODEL }}
+          REQUESTED_MODEL: ${{ steps.trusted-model.outputs.model }}
           SOURCE_WORKFLOW_RUN_ID: ${{ github.run_id }}
           SOURCE_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
         with:

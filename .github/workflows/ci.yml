@@ -9,8 +9,8 @@
 # Setup per repo (or once at org level):
 #   Secrets    OPENROUTER_CODE_REVIEW_KEY   OpenRouter key for OCR
 #              OPENROUTER_PR_APPROVER_KEY   OpenRouter key for PR-Agent (separate key on purpose)
-#   Models     OCR            qwen/qwen3-coder-flash (software template only)
-#              PR-Agent       openrouter/deepseek/deepseek-v4.1-flash-1017 (committed policy)
+#   Models     OCR            qwen/qwen3-coder-next (software template only)
+#              PR-Agent       openrouter/z-ai/glm-5.3-flash (committed policy)
 #   Review jobs are mandatory evidence for software PRs; validate findings against code.
 #   Align branch protection and the committed prerequisite list with emitted check names.
 #   Mandatory review jobs fail when credentials are unavailable, including fork PRs.
@@ -210,9 +210,11 @@ jobs:
           rule: ${{ runner.temp }}/ocr-ci-rules.json
           llm_url: https://openrouter.ai/api/v1
           llm_auth_token: ${{ secrets.OPENROUTER_CODE_REVIEW_KEY }}
-          llm_model: qwen/qwen3-coder-flash
+          llm_model: qwen/qwen3-coder-next
           llm_use_anthropic: 'false'
-          llm_extra_body: '{}' # Do not send the action's GLM-native thinking flag to Qwen.
+          # OpenRouter price-first provider ordering: a preference, not a price ceiling or guarantee.
+          # Replaces the action's GLM-native thinking default, which Qwen must not receive.
+          llm_extra_body: '{"provider":{"sort":"price"}}'
           llm_timeout: '120'
           effort: 'medium'
           stream_progress: 'true'

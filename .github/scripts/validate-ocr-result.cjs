@@ -9,6 +9,8 @@ const crypto = require('node:crypto');
 // exempt. A changed file outside those exemptions that OCR did not select must block.
 // Update the lists and OCR_PINNED_COMMIT whenever ci.yml moves to a new OCR commit.
 const OCR_PINNED_COMMIT = '182898cf522da3d04157b422752d028417974e19';
+// The review model ci.yml requests; the trusted verifier accepts only this effective model.
+const OCR_PINNED_MODEL = 'qwen/qwen3-coder-next';
 const OCR_SUPPORTED_EXTENSIONS = new Set([
   ".java", ".kt", ".kts", ".scala", ".groovy", ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs",
   ".cjs", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hxx", ".cs", ".vb", ".fs", ".fsi", ".fsx",
@@ -69,7 +71,7 @@ function validateOcrResult(result, expectedHead, changedFiles) {
     fail('review and manifest must both be complete, or both skipped');
   }
   if (manifest.input?.resolved_head !== expectedHead) fail('reviewed SHA does not match the current PR head');
-  if (result.llm?.model !== 'qwen/qwen3-coder-flash' || manifest.execution?.model !== result.llm.model) {
+  if (result.llm?.model !== OCR_PINNED_MODEL || manifest.execution?.model !== result.llm.model) {
     fail('effective review model is not the pinned Qwen model');
   }
   const coverage = manifest.coverage;
@@ -141,7 +143,7 @@ async function resolveOcrArtifact(github, repo, headSha, checkName = 'Code revie
   return { runId, attempt: job.run_attempt, artifactName: matches[0].name, headSha, artifactId: matches[0].id, checkId: check.id, jobId };
 }
 
-module.exports = { validateOcrResult, resolveOcrArtifact, isUnreviewablePath, OCR_PINNED_COMMIT };
+module.exports = { validateOcrResult, resolveOcrArtifact, isUnreviewablePath, OCR_PINNED_COMMIT, OCR_PINNED_MODEL };
 
 if (require.main === module) {
   try {

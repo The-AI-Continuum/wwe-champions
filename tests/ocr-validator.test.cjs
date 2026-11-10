@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { validateOcrResult, resolveOcrArtifact } = require('../.github/scripts/validate-ocr-result.cjs');
+const { validateOcrResult, resolveOcrArtifact, OCR_PINNED_MODEL } = require('../.github/scripts/validate-ocr-result.cjs');
 
 const head = 'a'.repeat(40);
 const selectedFile = {
@@ -17,7 +17,7 @@ function completeResult(overrides = {}) {
       schema_version: 'ocr.run-manifest/v1',
       operation: 'review',
       input: { resolved_head: head },
-      execution: { model: 'qwen/qwen3-coder-flash' },
+      execution: { model: OCR_PINNED_MODEL },
       coverage: {
         selected: [selectedFile],
         completed: [selectedFile],
@@ -26,7 +26,7 @@ function completeResult(overrides = {}) {
         waived: [],
       },
     },
-    llm: { model: 'qwen/qwen3-coder-flash' },
+    llm: { model: OCR_PINNED_MODEL },
     warnings: [],
     ...overrides,
   };
@@ -50,6 +50,33 @@ test('rejects evidence for a different current head', () => {
     () => validateOcrResult(completeResult(), 'c'.repeat(40), ['src/App.tsx']),
     /reviewed SHA does not match the current PR head/,
   );
+});
+
+test('rejects otherwise valid evidence from the retired Qwen Flash model', () => {
+  const retired = 'qwen/qwen3-coder-flash';
+  assert.notEqual(retired, OCR_PINNED_MODEL);
+  const result = completeResult();
+  result.manifest.execution.model = retired;
+  result.llm.model = retired;
+  assert.throws(
+    () => validateOcrResult(result, head, ['src/App.tsx']),
+    /effective review model is not the pinned Qwen model/,
+  );
+});
+
+test('rejects evidence whose execution model differs from the effective LLM model', () => {
+  for (const [execution, llm] of [
+    [OCR_PINNED_MODEL, 'qwen/qwen3-coder-flash'],
+    ['qwen/qwen3-coder-flash', OCR_PINNED_MODEL],
+  ]) {
+    const result = completeResult();
+    result.manifest.execution.model = execution;
+    result.llm.model = llm;
+    assert.throws(
+      () => validateOcrResult(result, head, ['src/App.tsx']),
+      /effective review model is not the pinned Qwen model/,
+    );
+  }
 });
 
 test('rejects failed or waived selected coverage', () => {
@@ -116,11 +143,11 @@ test('workflow OCR rules include supported tests and fixtures without overriding
   const { spawnSync } = require('node:child_process');
   const { isUnreviewablePath } = require('../.github/scripts/validate-ocr-result.cjs');
   const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/ci.yml'), 'utf8');
-  const step = workflow.match(/      - name: Select all reviewable changes, including tests and fixtures\n(?:.*\n)*?        run: \|\n((?:          .*\n)+)/);
+  const step = workflow.match(/ {6}- name: Select all reviewable changes, including tests and fixtures\n(?:.*\n)*? {8}run: \|\n((?: {10}.*\n)+)/);
   assert.ok(step, 'OCR selection step is missing');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocr-rules-'));
   try {
-    const run = spawnSync('bash', ['-ec', step[1].replace(/^          /gm, '')], {
+    const run = spawnSync('bash', ['-ec', step[1].replace(/^ {10}/gm, '')], {
       env: { ...process.env, RUNNER_TEMP: dir }, encoding: 'utf8',
     });
     assert.equal(run.status, 0, run.stderr);

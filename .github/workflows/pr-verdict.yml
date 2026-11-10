@@ -242,7 +242,7 @@ jobs:
               if (!exactCheckNames || evidence.schemaVersion !== 1 || evidence.phase1?.verdict !== 'pass' ||
                   (reviewStatus !== 'completed' && reviewStatus !== 'skipped') ||
                   evidence.externalReview?.verdict !== 'pass' ||
-                  evidence.externalReview?.requestedModel !== 'openrouter/deepseek/deepseek-v4.1-flash-1017' ||
+                  evidence.externalReview?.requestedModel !== 'openrouter/z-ai/glm-5.3-flash' ||
                   evidence.verdict !== 'pass') {
                 verdict.blockReasons.push('External-review evidence does not contain a complete pass.');
               } else {

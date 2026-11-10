@@ -30,7 +30,7 @@ npm install
 The weekly refresh runs on Josh's Mac as a scheduled local task, every Tuesday after Monday Night Raw and weekend PPVs. GitHub holds no GH-OMP credentials. The task writes its own helper script (for example `refresh-champions.sh` in a scratch directory, never committed) and runs it under Phase so `OMP_GH_APP_ID` and `OMP_GH_APP_PRIVATE_KEY_B64` are injected from `operations` / Production / `/github-apps/omp`. The script must:
 
 1. Skip the run if a PR from a `refresh-data/*` branch is already open.
-2. Run `python scrape.py` in a fresh clone of the default branch, then stage only `public/champions.json`, `public/metadata.json` and `index.html`. Stop if nothing changed.
+2. Run `python scrape.py` in a fresh clone of the default branch and stop if it exits non-zero (a refusal). Otherwise stage only `public/champions.json`, `public/metadata.json` and `index.html`. Stop if nothing changed.
 3. Commit on `refresh-data/<UTC date>` as `gh-omp[bot]` and push with `~/.omp/bin/gh-omp-push`.
 4. Mint the token with `~/.omp/bin/gh-omp-token`, confirm the App slug is `gh-omp`, and open the PR from it. It never falls back to Josh's GitHub login.
 
@@ -43,11 +43,23 @@ source .venv/bin/activate
 python scrape.py
 ```
 
-The scraper writes the champion array to `public/champions.json` and the completed refresh time to `public/metadata.json`. The dashboard displays that generated time when available; if the metadata cannot be read, it marks the update time unavailable while keeping valid champion records visible.
+The scraper writes the champion array to `public/champions.json` and the UTC refresh timestamp to `public/metadata.json`, captured at the start of the run so its date matches every day count. The dashboard displays that generated time when available; if the metadata cannot be read, it marks the update time unavailable while keeping valid champion records visible.
 
-Day counts are fixed at refresh, not recalculated live. Retained source values may predate the generated snapshot, so the generation time is not a promise that every count was freshly obtained. The page displays dates in UTC and explains the weekly refresh cadence. WWE.com and Cagematch provide the source information; a completed refresh does not guarantee complete verification of every upstream field. Social previews describe the same weekly snapshot, not a live tracker.
+Each file is written to a temporary file in the same directory and atomically swapped into place: the snapshot first, then the `index.html` social image, then `public/metadata.json` last. An interrupted refresh therefore never leaves truncated JSON or fresh metadata stamped over an old snapshot.
 
-If Cagematch is unavailable or blocks a request, the script still preserves WWE.com champion records with display-safe fallback values.
+A refresh is a refusal if the WWE.com champion listing is unavailable, lists no champions, omits a held title in the current snapshot without Cagematch confirming that exact title as inactive, or disagrees with Cagematch about a title's holder. If an existing title is omitted by WWE and Cagematch lists it under **Inactive Titles** (and not Active Titles), the snapshot publishes that current record as vacant in its existing position. Inactive Cagematch titles that are not already in the snapshot are not added. Omission from WWE alone never confirms a new vacancy; a previously confirmed vacant record is retained during a Cagematch outage, while an unverified refill is refused. The current snapshot and metadata stay exactly as they were on refusal, so the weekly task opens no PR. The refusal names each disagreeing title and both holders. Holder comparison tolerates tag-team member order and a trailing member list, but requires an exact normalized title match. Because WWE.com can show a title change before Cagematch catches up, a title change can delay the weekly refresh until Cagematch catches up. If a title was genuinely retired or a title change is verified, rerun once accepting that title:
+
+```bash
+python scrape.py --accept-title "Intercontinental Champion"
+```
+
+`--accept-title` may be repeated and applies to that run only.
+
+Day counts are fixed at refresh, not recalculated live. Every day count is in whole days up to the refresh's UTC date, the same date as `generatedAt`. Reign length is always recounted from the reign start date, including when Cagematch is unavailable and the refresh falls back to the current snapshot. Retained source values may predate the generated snapshot, so the generation time is not a promise that every count was freshly obtained. The page displays dates in UTC and explains the weekly refresh cadence. WWE.com and Cagematch provide the source information; a completed refresh does not guarantee complete verification of every upstream field. Social previews describe the same weekly snapshot, not a live tracker.
+
+If Cagematch is unavailable or blocks a request, the script still preserves WWE.com champion records with display-safe fallback values, and prints each fallback it used.
+
+`scrape.py` owns the browser (`LivePageFetcher`, which retries pages and clicks through WWE.com's interstitial) and the file writes; `refresh(page_fetcher, accepted_titles)` reads the current snapshot, builds the new one and either writes it or reports the refusal. Every parsing, fallback and refusal decision lives in `snapshot.py`, whose `build_snapshot(page_fetcher, current_snapshot, refresh_date, accepted_titles)` asks a page fetcher for pages by URL and never touches a browser or the filesystem. Tests drive it with `RecordedPageFetcher` and hand-trimmed real pages in `tests/fixtures/`.
 
 ## Run the Dashboard
 
@@ -98,6 +110,27 @@ npm run build
 }
 ```
 
+Vacant titles use this exact record shape:
+
+```json
+{
+  "titleName": "WWE Speed Champion",
+  "championName": null,
+  "vacant": true,
+  "imageUrl": null,
+  "championshipDate": null,
+  "daysAsChampion": null,
+  "lastDefenseDate": null,
+  "daysSinceLastDefense": null,
+  "source": {
+    "wweUrl": "",
+    "cagematchUrl": "https://www.cagematch.net/?id=5&nr=6760"
+  }
+}
+```
+
+A title leaves this shape and returns to an ordinary held record when WWE and Cagematch agree on its new holder. Existing snapshots without a `vacant` field remain valid and continue to be processed as ordinary records.
+
 ## Scraper Notes
 
 - WWE.com is parsed from its public superstar/champion listing and champion profile pages.
@@ -116,12 +149,18 @@ npm run build
 python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The Node tests cover the OCR evidence validator and snapshot announcement outcomes. Python fixtures cover defense parsing, confirmed-none versus incomplete/unmatched history, numeric zero, and reading older snapshots without live upstream access. UI acceptance additionally requires exercising the running dashboard: search/group/reset and keyboard recovery, independent metadata failure/timeout, same-count retry and stale responses, source links, image fallbacks, reduced motion, and readable reflow.
+The Node tests cover the OCR evidence validator and snapshot announcement outcomes. Python tests build whole snapshots from recorded pages through `snapshot.build_snapshot`, covering defense parsing, confirmed-none versus incomplete/unmatched history, numeric zero, falling back to the current snapshot without live upstream access, and refusing empty or incomplete WWE.com listings unless a retired title is accepted. `tests/test_refresh.py` drives `scrape.refresh` in a scratch directory to prove a refusal exits non-zero with every published file byte-identical, and that an interrupted snapshot write leaves no temporary file and no fresh metadata. UI acceptance additionally requires exercising the running dashboard: search/group/reset and keyboard recovery, independent metadata failure/timeout, same-count retry and stale responses, source links, image fallbacks, reduced motion, and readable reflow.
 
-CI selects OCR-supported test and fixture files with supported filename extensions while retaining its non-test generated, dependency, and unsupported-file exclusions. Extensionless files and single-dotfile names under OCR-excluded test or fixture directories are not covered by the include override; the evidence validator blocks if OCR omits them. OCR evidence must cover every changed, non-deleted reviewable path. PR-Agent coverage includes reviewable deletion patches. For an empty PR-Agent review of a change containing a lockfile, including a rename from a lockfile, the binding verdict also requires an effective owner approval on the current head.
+CI selects OCR-supported test and fixture files with supported filename extensions while retaining its non-test generated, dependency, and unsupported-file exclusions. Extensionless files and single-dotfile names under OCR-excluded test or fixture directories are not covered by the include override; the evidence validator blocks if OCR omits them. OCR evidence must cover every changed, non-deleted reviewable path. PR-Agent coverage includes reviewable deletion patches. For an empty PR-Agent review of a change containing a lockfile, including a rename from a lockfile, the binding verdict also requires an effective human (`User`, not bot) owner approval on the current head.
 
 Both the evidence producer and verdict verifier load the coverage classifier from the trusted default branch. An introducing or updating PR therefore uses the previously merged classifier until the helper is merged; deploy the helper first before relying on its updated classification for later reviews.
 
 PR-Agent findings are advisory: the gate verifies that a fresh reviewer comment was published, not that its findings were resolved or that the comment says the change is clean. Binding approval attests to the validated evidence and revision, not an independent assessment of those findings; reviewers must assess them separately.
+
+Review models are `qwen/qwen3-coder-next` for OCR and `openrouter/z-ai/glm-5.3-flash` for PR-Agent, the only models the shared OpenRouter guardrail allows besides the reserve `nvidia/nemotron-3.5-lightning`; that reserve has no automatic fallback and needs a new explicit decision. Both requests set OpenRouter `provider.sort` to `price`, which prefers the cheapest provider but is neither a price ceiling nor a guarantee. PR-Agent runs with low reasoning, `max_output_tokens` 8192, and no fallback models: `CONFIG__FALLBACK_MODELS` is set empty and `--config.fallback_models=[]` is passed because an environment list would merge with the shipped fallback. The producer reads the PR-Agent model from the checked-out trusted default-branch `independent-review.yml`, and the verdict accepts only its own pin, so a PR that changes a model is reviewed under the previous trusted pin until it merges.
+
+Reviewed PR-Agent runtime. Upstream PR-Agent 0.45 cannot send `provider.sort`, and LiteLLM can turn an unfinished OpenRouter stream into a synthetic `stop`. The external review therefore runs from `.github/scripts/pr-agent-runtime`, a byte-identical copy of the shared runtime from the Brain repository (`main` `414fef0`, Brain PR #210). `install.sh` verifies `MANIFEST.sha256`, installs the hash-locked upstream wheels (`requirements.lock`, `build-requirements.lock`; CPython 3.12, x86_64) and applies `patch_runtime.py`. The patch accepts only the exact upstream source hashes of three files and fails closed otherwise. The patched runtime calls one approved model with no fallback or routing override, always streams, adds `provider.sort=price` without dropping other provider options, and refuses to publish unless the provider reports a terminal `stop` (a `length` or any other finish reason is an error). Do not edit these files in this repository: change Brain first, then copy the result here byte for byte. `independent-review.yml` installs the runtime from the trusted default-branch checkout, never from pull-request code, and fails closed while the default branch does not carry it.
+
+Status: the runtime is not active on the default branch yet. Until an owner makes the one-time bootstrap merge of this change, the introducing PR cannot pass its own PR-Agent review or OCR validation, because the default branch still has the retired model pins and no runtime; that block is expected and is not waived or suppressed. After that merge, the normal review path uses the new runtime and pins. The Brain runtime test suite proves the shared runtime; it was not re-run in this repository.
 
 Compact cards share metric tracks across neighboring entries, retain complete date text, and use subdued 8% white dividers. The layout was checked at 320, 390, 640, 768, 1024, 1280, and 1536 CSS pixels. Definition lists remain real grid boxes, preserving term/definition semantics without `display: contents`. Browser semantics and automated accessibility scans do not replace a real screen-reader session or native browser zoom verification.
