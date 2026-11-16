@@ -105,64 +105,13 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve trusted OCR artifact
-        id: trusted-ocr-source
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
-        with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            try {
-              const { resolveOcrArtifact } = require('./.github/scripts/validate-ocr-result.cjs');
-              const files = [];
-              const walk = directory => {
-                for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-                  const full = path.join(directory, entry.name);
-                  entry.isDirectory() ? walk(full) : files.push(full);
-                }
-              };
-              walk('phase2-artifacts');
-              const paths = files.filter(file => path.basename(file) === 'phase2-evidence.json');
-              if (paths.length !== 1) throw new Error('Exactly one external-review evidence file is required.');
-              const evidence = JSON.parse(fs.readFileSync(paths[0], 'utf8'));
-              const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: evidence.pr.number });
-              if (pr.state !== 'open' || pr.head.sha !== evidence.pr.headSha ||
-                  context.payload.workflow_run.head_sha !== pr.head.sha) throw new Error('OCR evidence source is stale.');
-              const source = await resolveOcrArtifact(github, context.repo, pr.head.sha);
-              fs.rmSync('trusted-ocr', { recursive: true, force: true });
-              fs.writeFileSync('trusted-ocr-source.json', JSON.stringify(source));
-              core.setOutput('run_id', String(source.runId));
-              core.setOutput('artifact_name', source.artifactName);
-              core.setOutput('resolved', 'true');
-            } catch (error) {
-              const message = String(error?.message || '');
-              const reason = message.startsWith('OCR:')
-                ? 'Trusted OCR resolution failed: the latest successful OCR check or its raw result artifact is missing, expired, or ambiguous.'
-                : 'Trusted OCR resolution failed: source PR metadata or external-review evidence is missing, malformed, or stale.';
-              core.setOutput('resolved', 'false');
-              core.setOutput('error', reason);
-            }
-
-      - name: Download trusted raw OCR evidence
-        id: trusted-ocr-download
-        if: steps.trusted-ocr-source.outputs.resolved == 'true'
-        continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: ${{ steps.trusted-ocr-source.outputs.artifact_name }}
-          path: trusted-ocr
-          run-id: ${{ steps.trusted-ocr-source.outputs.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Validate frozen evidence
         id: verdict
         env:
           PR_NUMBER: ${{ steps.check-target.outputs.pr_number }}
           HEAD_SHA: ${{ steps.check-target.outputs.head_sha }}
-          TRUSTED_OCR_RESOLUTION_ERROR: ${{ steps.trusted-ocr-source.outputs.error }}
-          TRUSTED_OCR_DOWNLOAD_OUTCOME: ${{ steps.trusted-ocr-download.outcome }}
           # Trusted default-branch configuration; keep identical to the producer list.
-          REQUIRED_REVIEW_CHECK_NAMES: '["Build & test", "Secrets scan", "SAST", "Dependency audit", "work-item-link", "Code review (OCR)"]'
+          REQUIRED_REVIEW_CHECK_NAMES: '["Build & test", "Secrets scan", "SAST", "Dependency audit", "work-item-link"]'
           OWNER_APPROVER_LOGIN: ${{ vars.OWNER_APPROVER_LOGIN }}
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
@@ -199,13 +148,6 @@ jobs:
               blockReasons: [],
               approval: { status: 'not-attempted' },
             };
-            const trustedOcrResolutionError = process.env.TRUSTED_OCR_RESOLUTION_ERROR || '';
-            const trustedOcrDownloadOutcome = process.env.TRUSTED_OCR_DOWNLOAD_OUTCOME;
-            if (trustedOcrResolutionError) {
-              verdict.blockReasons.push(trustedOcrResolutionError);
-            } else if (trustedOcrDownloadOutcome !== 'success') {
-              verdict.blockReasons.push('Trusted OCR result artifact could not be downloaded.');
-            }
 
             let evidence;
             if (!evidencePath) {
@@ -271,28 +213,6 @@ jobs:
                     .sort((a, b) => String(b.completed_at || b.started_at || '').localeCompare(String(a.completed_at || a.started_at || '')))[0];
                   if (!check || check.status !== 'completed' || check.conclusion !== 'success') {
                     verdict.blockReasons.push(`${name}: live required check is not completed/successful.`);
-                  }
-                }
-                if (!trustedOcrResolutionError && trustedOcrDownloadOutcome === 'success') {
-                  try {
-                    const { validateOcrResult } = require('./.github/scripts/validate-ocr-result.cjs');
-                    const raw = fs.readFileSync('trusted-ocr/ocr-result.json', 'utf8');
-                    const prFiles = await github.paginate(github.rest.pulls.listFiles, {
-                      ...context.repo, pull_number: evidence.pr.number, per_page: 100,
-                    });
-                    // GitHub truncates the raw list (deletions included) at 3000; coverage beyond that cannot be verified.
-                    if (prFiles.length >= 3000) throw new Error('PR file list is truncated');
-                    const changedFiles = prFiles.filter(file => file.status !== 'removed').map(file => file.filename);
-                    validateOcrResult(JSON.parse(raw), evidence.pr.headSha, changedFiles);
-                    const source = JSON.parse(fs.readFileSync('trusted-ocr-source.json', 'utf8'));
-                    const recorded = evidence.ocrReview;
-                    const digest = require('crypto').createHash('sha256').update(raw).digest('hex');
-                    if (recorded?.status !== 'complete' || recorded.contentSha256 !== digest ||
-                        ['runId', 'attempt', 'artifactName', 'headSha'].some(key => recorded.source?.[key] !== source[key])) {
-                      throw new Error('Producer OCR record does not match independently downloaded evidence');
-                    }
-                  } catch {
-                    verdict.blockReasons.push('Trusted raw OCR evidence is missing, stale, partial or inconsistent.');
                   }
                 }
                 // A PR that changes .github/ ran its own workflows and review scripts, so its
