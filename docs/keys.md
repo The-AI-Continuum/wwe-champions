@@ -8,14 +8,13 @@ This inventory records credential names and consumers only. Never record secret 
 
 ## Scope: Only Keys Used by This Project
 
-This lists the credentials and configuration that this repository's retained workflows and actively used local tools read. It is not a registry of everything in Operations, Phase, or GitHub. Review model IDs are pinned workflow configuration, not credentials; no retained consumer reads `OCR_MODEL` or `PR_AGENT_MODEL`. Retirement history lives in the decision records under `docs/adr/`.
+This lists the credentials and configuration that this repository's retained workflows and actively used local tools read. It is not a registry of everything in Operations, Phase, or GitHub. Review model IDs are pinned workflow configuration, not credentials; no retained consumer reads `OCR_MODEL` or `PR_AGENT_MODEL`. OCR runs locally before each PR via `ocr-preflight`, not in CI, so no workflow reads `OPENROUTER_CODE_REVIEW_KEY`. Retirement history lives in the decision records under `docs/adr/`.
 
 ## Active Dependencies
 
 | Name actually read by consumer | Type | Active consumer: file / job / function | Required when | Minimum permissions |
 |---|---|---|---|---|
-| `OPENROUTER_CODE_REVIEW_KEY` | secret | `.github/workflows/ci.yml` — `Code review (OCR)` job (credential check and `llm_auth_token`) | Mandatory on every non-draft pull request | OpenRouter inference key for the OCR review model; scope Unverified |
-| `OPENROUTER_PR_APPROVER_KEY` | secret | `.github/workflows/independent-review.yml` — external PR-Agent review (`PRA_KEY`, `OPENROUTER__KEY`) | Mandatory for the external review after the required checks finish | OpenRouter inference key for the external review model, separate from the OCR key; scope Unverified |
+| `OPENROUTER_PR_APPROVER_KEY` | secret | `.github/workflows/independent-review.yml` — external PR-Agent review (`PRA_KEY`, `OPENROUTER__KEY`) | Mandatory for the external review after the required checks finish | OpenRouter inference key for the external review model; scope Unverified |
 | `CODE_REVIEW_AND_PR_BOT_APP_PRIVATE_KEY_B64` | secret | `.github/workflows/pr-verdict.yml` — verdict job (`environment: binding-approval`), decoded to mint the App token | Mandatory for binding approval | Private key of the Code Review and PR Bot GitHub App; App permissions Unverified this session |
 | `CODE_REVIEW_AND_PR_BOT_REVIEW_APP_ID` | secret (public App ID delivered as a secret) | `.github/workflows/pr-verdict.yml` — verdict job, `app-id` for the App token | Mandatory for binding approval | Public App identifier; no permissions of its own |
 | `LINEAR_CI_READ_KEY` | secret | `.github/workflows/work-item-link.yml` — Linear work-item validation | Mandatory on pull requests (`work-item-link` required check) | Read-only Linear API key; scope Unverified |
@@ -32,7 +31,6 @@ Phase is the canonical source; GitHub Actions and the local runtime are delivery
 
 | Destination platform | Account / repo / app / project | Destination environment / scope | Setting type and exact destination name | Consumer reference | Delivery needed? | Delivery configured / verified? |
 |---|---|---|---|---|---|---|
-| GitHub Actions | org `The-AI-Continuum`, visible to `wwe-champions` | Organization secret | secret: `OPENROUTER_CODE_REVIEW_KEY` | `ci.yml` / `Code review (OCR)` | Yes | Verified present as an organization secret available to this repository on 2026-11-07 (name only). Org-secret visibility policy and Phase-to-GitHub sync path Unverified. Earlier evidence: OCR review passed on PR #16 |
 | GitHub Actions | org `The-AI-Continuum`, visible to `wwe-champions` | Organization secret | secret: `OPENROUTER_PR_APPROVER_KEY` | `independent-review.yml` | Yes | Verified present as above on 2026-11-07. Visibility policy and sync path Unverified. Earlier evidence: external review passed on PR #16 |
 | GitHub Actions | org `The-AI-Continuum`, visible to `wwe-champions` | Organization secret | secret: `LINEAR_CI_READ_KEY` | `work-item-link.yml` | Yes | Verified present as above on 2026-11-07. Visibility policy and sync path Unverified. Earlier evidence: `work-item-link` passed on PR #16 |
 | GitHub Actions | `The-AI-Continuum/wwe-champions` | Environment `binding-approval` (deployment branches limited to `main`) | secret: `CODE_REVIEW_AND_PR_BOT_APP_PRIVATE_KEY_B64` | `pr-verdict.yml` / verdict job | Yes | Verified present and branch policy `main` on 2026-11-07. Earlier evidence: Binding approval succeeded on PRs #18 and #19 |
@@ -48,7 +46,6 @@ Repository-scoped Actions secrets and variables for `wwe-champions` are empty as
 
 | Consumer / destination name | Canonical Phase source: app name/ID / environment / folder / key | Project Phase reference | Delivery method / selected sync target |
 |---|---|---|---|
-| `OPENROUTER_CODE_REVIEW_KEY` | Phase `Operations` / Production / `/openrouter` (carried from the earlier inventory; Unverified this session) | Unverified | GitHub organization secret on `The-AI-Continuum`; sync path Unverified |
 | `OPENROUTER_PR_APPROVER_KEY` | Phase `Operations` / Production / `/openrouter` (carried from the earlier inventory; Unverified this session) | Unverified | GitHub organization secret on `The-AI-Continuum`; sync path Unverified |
 | `LINEAR_CI_READ_KEY` | Unverified | Unverified | GitHub organization secret on `The-AI-Continuum`; earlier inventory recorded it synced to repository Actions on 2026-10-21; sync path Unverified |
 | `CODE_REVIEW_AND_PR_BOT_APP_PRIVATE_KEY_B64`, `CODE_REVIEW_AND_PR_BOT_REVIEW_APP_ID` | Unverified (Phase location not recorded in this repository) | Unverified | `binding-approval` environment secrets; delivery method Unverified |
@@ -93,7 +90,7 @@ Refresh PRs and all other PRs run the required checks, the external review, and 
 
 | Active entry and destination | Evidence / check performed | Date | Result / next action |
 |---|---|---|---|
-| Organization secrets `OPENROUTER_CODE_REVIEW_KEY`, `OPENROUTER_PR_APPROVER_KEY`, `LINEAR_CI_READ_KEY` (GitHub Actions) | Names listed from the repository's organization-secrets endpoint; consumers read from workflow files | 2026-11-07 | Present and consumed. Unverified: org-secret visibility scope, Phase source, sync path |
+| Organization secrets `OPENROUTER_PR_APPROVER_KEY`, `LINEAR_CI_READ_KEY` (GitHub Actions) | Names listed from the repository's organization-secrets endpoint; consumers read from workflow files | 2026-11-07 | Present and consumed. Unverified: org-secret visibility scope, Phase source, sync path |
 | `binding-approval` environment secrets (GitHub Actions) | Environment secret names and branch policy read via `gh api`; consumer read from `pr-verdict.yml` | 2026-11-07 | Verified present; branch policy is `main` only |
 | `OWNER_APPROVER_LOGIN` (GitHub Actions variable) | Organization variable name and value read via `gh api`; consumer read from `pr-verdict.yml` | 2026-11-07 | Verified: `joshmuthumani` |
 | Repository-scoped Actions secrets and variables | `gh api` listing | 2026-11-07 | Both empty; delivery is organization-level |

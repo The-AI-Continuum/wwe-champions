@@ -3,14 +3,12 @@
 #   Build & test   auto-detects Node (npm/pnpm/yarn) or Python (uv/pip) and runs whatever
 #                  lint/typecheck/test/build scripts the repo already has.
 #   Secrets scan   gitleaks on the PR's commits (full history on pushes to main).
-#   Code review    Alibaba OpenCodeReview (OCR) - line-level review comments, external model.
 #   PR review      independent-review.yml -> PR-Agent (external), followed by Binding approval.
 #
 # Setup per repo (or once at org level):
-#   Secrets    OPENROUTER_CODE_REVIEW_KEY   OpenRouter key for OCR
-#              OPENROUTER_PR_APPROVER_KEY   OpenRouter key for PR-Agent (separate key on purpose)
-#   Models     OCR            qwen/qwen3-coder-next (software template only)
-#              PR-Agent       openrouter/z-ai/glm-5.3-flash (committed policy)
+#   Secrets    OPENROUTER_PR_APPROVER_KEY   OpenRouter key for PR-Agent
+#   Models     PR-Agent       openrouter/z-ai/glm-5.3-flash (committed policy)
+#   OCR code review runs locally before a PR is opened (ocr-preflight), not in CI.
 #   Review jobs are mandatory evidence for software PRs; validate findings against code.
 #   Align branch protection and the committed prerequisite list with emitted check names.
 #   Mandatory review jobs fail when credentials are unavailable, including fork PRs.
@@ -170,80 +168,3 @@ jobs:
           args=(git --redact --verbose --exit-code 1)
           if [ -n "$BASE" ]; then args+=("--log-opts=$BASE..$HEAD"); fi
           gitleaks "${args[@]}" .
-
-  code-review:
-    name: Code review (OCR)
-    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      OCR_NO_UPDATE: '1'
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - name: Validate mandatory review credential
-        id: keys
-        env:
-          OCR_KEY: ${{ secrets.OPENROUTER_CODE_REVIEW_KEY }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${OCR_KEY//[[:space:]]/}" ]]; then
-            echo '::error::OPENROUTER_CODE_REVIEW_KEY is required for mandatory review.'
-            exit 1
-          fi
-
-      # Self-hosted runners keep /tmp between jobs; never let an older result stand in.
-      - name: Clear previous OCR result
-        run: rm -f /tmp/ocr-result.json
-
-      - name: Select all reviewable changes, including tests and fixtures
-        id: ocr-selection
-        run: |
-          # Includes bypass OCR's extension and default-path gates. Limit them to
-          # supported extensions and retain its non-test default path exclusions.
-          # Keep these patterns aligned with the pinned OCR allowlist and the trusted validator.
-          printf '%s\n' '{"include":["**/*.{java,kt,kts,scala,groovy,py,pyi,js,jsx,ts,tsx,mjs,cjs,c,h,cpp,cc,cxx,hpp,hxx,cs,vb,fs,fsi,fsx,go,rs,rb,rake,gemspec,php,phtml,swift,m,mm,sh,bash,zsh,fish,ps1,sql,css,scss,sass,less,html,htm,ftl,ftlh,ftlx,hbs,mustache,jinja2,j2,pug,astro,vue,ipynb,svelte,xml,yaml,yml,json,toml,ini,env,gradle,cmake,r,lua,pl,pm,ex,exs,erl,hrl,ets,json5,dart,tf,graphql,gql,prisma,jl,hcl,tfvars,bicep,proto,nix,hs,lhs,nim,nims,nimble,elm,properties,po,pot,jsonnet,libsonnet,zig,thrift,capnp,ml,mli,re,rei,v,sv,vh,vhd,vhdl,sol,vy,rego}"],"exclude":["**/oh_modules/**","**/*.snap","**/.ipynb_checkpoints/**","**/*.generated.*","**/*.gen.go","**/*.pb.go","**/*.pb.cc","**/*.pb.h","**/kitex_gen/**/*.go","**/*.capnp.h","**/*.capnp.go","**/*.capnp.ts","**/*_capnp.rs","**/*_capnp.py","lib/**/*.sol","**/node_modules/**","**/bower_components/**","**/.pnpm-store/**","**/.yarn/{cache,unplugged,releases,sdks,patches}/**","**/.pnp.cjs","**/.pnp.loader.mjs","**/package-lock.json","**/pnpm-lock.yaml","**/npm-shrinkwrap.json","**/*.min.{js,css}","**/dist/**","**/.next/**","**/.nuxt/**","**/.svelte-kit/**","**/.astro/**","**/.turbo/**","**/.angular/**","**/.parcel-cache/**","**/.docusaurus/**","**/vendor/**","**/.bundle/**","**/target/**","**/.gradle/**","**/__pycache__/**","**/.venv/**","**/venv/**","**/site-packages/**","**/*.egg-info/**","**/.tox/**","**/.mypy_cache/**","**/.pytest_cache/**","**/.ruff_cache/**","**/Pods/**","**/Carthage/**","**/.build/**","**/obj/**","**/.dart_tool/**","**/.terraform/**","**/.terraform.lock.hcl","**/.stack-work/**","**/coverage/lcov-report/**"]}' > "$RUNNER_TEMP/ocr-ci-rules.json"
-
-      - uses: alibaba/open-code-review@182898cf522da3d04157b422752d028417974e19 # v1.12.12
-        with:
-          rule: ${{ runner.temp }}/ocr-ci-rules.json
-          llm_url: https://openrouter.ai/api/v1
-          llm_auth_token: ${{ secrets.OPENROUTER_CODE_REVIEW_KEY }}
-          llm_model: qwen/qwen3-coder-next
-          llm_use_anthropic: 'false'
-          # OpenRouter price-first provider ordering: a preference, not a price ceiling or guarantee.
-          # Replaces the action's GLM-native thinking default, which Qwen must not receive.
-          llm_extra_body: '{"provider":{"sort":"price"}}'
-          llm_timeout: '120'
-          effort: 'medium'
-          stream_progress: 'true'
-          upload_artifacts: 'true' # The pinned action publishes the raw result before this guard.
-          ocr_version: '1.12.12'   # pin the CLI too; the action defaults to "latest"
-          sticky_summary: 'true' # update one summary comment instead of adding a new one per push
-          incremental: 'true'    # don't repeat comments already posted on earlier pushes
-
-      # Import only the trusted default-branch helper. Land the helper in a
-      # preparatory PR before migrating these workflows; never execute a helper
-      # supplied solely by the pull request being reviewed.
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-
-      - name: Require complete OCR review
-        id: ocr-complete
-        env:
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ github.token }}
-          OCR_CHANGED_FILES: ${{ runner.temp }}/ocr-changed-files.txt
-        run: |
-          # Every non-deleted changed file must be selected by OCR or be skipped by OCR's own built-in filter.
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --paginate --jq '.[] | [.status, .filename] | @tsv' > "$RUNNER_TEMP/ocr-pr-files.tsv"
-          # GitHub truncates the raw list (deletions included) at 3000 files.
-          if [ "$(wc -l < "$RUNNER_TEMP/ocr-pr-files.tsv")" -ge 3000 ]; then
-            echo '::error::The PR changes 3000+ files; GitHub truncates the list, so OCR coverage cannot be verified.'
-            exit 1
-          fi
-          awk -F '\t' '$1 != "removed" { print $2 }' "$RUNNER_TEMP/ocr-pr-files.tsv" > "$OCR_CHANGED_FILES"
-          node .github/scripts/validate-ocr-result.cjs /tmp/ocr-result.json "$PR_HEAD" > /dev/null
